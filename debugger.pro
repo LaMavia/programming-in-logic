@@ -3,7 +3,26 @@
          , do_body/1, do_body/3
          , scal/3, system/1
          , do_goal_impl/1, emit_event/2
-         , write_debugger_line/2.
+         , write_debugger_line/2
+         , myTrace/1, zuzu_leash/1.
+
+
+
+
+
+% myTrace(+Goal)
+myTrace(Goal) :- 
+  (  do_goal(Goal) 
+  -> cleanup
+  ;  cleanup, 
+     fail
+  ).
+
+
+cleanup :-
+  zuzu_set_flag(call_id, 1),
+  zuzu_set_flag(resume_at, any),
+  zuzu_set_flag(in_creep, no).
 
 
 
@@ -27,8 +46,8 @@ do_goal(Goal) :-
     (
        do_goal_impl(Goal) 
     -> emit_event(exit, Goal, CallId)
-    ;  emit_event(fail, Goal, CallId)
-    ,  fail
+    ;  emit_event(fail, Goal, CallId),  
+       fail
     ).
 
 % do_goal_impl(+Goal)
@@ -146,6 +165,8 @@ port_display(exception, "Exception").
 
 
 % zuzu_debugger_flag(+Key, +Value)
+zuzu_debugger_flag(in_creep, no).
+zuzu_debugger_flag(resume_at, any).
 zuzu_debugger_flag(modes, [call,exit,redo,fail,exception]).
 zuzu_debugger_flag(call_id, 1).
 
@@ -169,8 +190,12 @@ zuzu_set_flag(Id, Val) :-
 emit_event(Event, Term, CallId) :-
   zuzu_get_flag(modes, TrackedPorts),
   (
-    member(Event, TrackedPorts) 
-  -> write_debugger_line(Event, Term, CallId) 
+    member(Event, TrackedPorts),
+    zuzu_get_flag(resume_at, ResumeAtId),
+    (ResumeAtId = any; ResumeAtId = CallId)
+  -> zuzu_set_flag(resume_at, any),
+     write_debugger_line(Event, Term, CallId),
+     handle_input(Event, CallId)
   ; true
   ).
 
@@ -179,4 +204,29 @@ emit_event(Event, Term, CallId) :-
 % write_debugger_line(+Event, +Term, +CallId)
 write_debugger_line(Event, Term, CallId) :-
   port_display(Event, PortDisplay),
-  format(user_error, "    ~d   ~s: ~W~n", [CallId, PortDisplay, Term, []]).
+  format(user_error, "    ~d   ~s: ~W ? ", [CallId, PortDisplay, Term, []]).
+
+
+
+% handle_input(+Event, +CallId)
+handle_input(_, _) :-
+  zuzu_get_flag(in_creep, yes),
+  !,
+  format('~n', []).
+
+handle_input(Event, CallId) :-
+  zuzu_get_flag(in_creep, no),
+  get_char(C),
+  handle_input(C, Event, CallId).
+
+% handle_input(+Char, +Event, +CallId)
+handle_input('\n', _, _) :- zuzu_set_flag(in_creep, no).
+handle_input('c', _, _) :- zuzu_set_flag(in_creep, yes).
+handle_input('a', _, _) :- fail.
+handle_input('e', _, _) :- halt.
+handle_input('s', Event, CallId) :-
+  ( (Event = call; Event = redo) 
+  -> zuzu_set_flag(resume_at, CallId)
+  ; throw("Action 's' only available in events: call, redo.")
+  ).
+ 
