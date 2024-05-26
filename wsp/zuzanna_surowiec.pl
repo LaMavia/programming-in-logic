@@ -26,6 +26,29 @@
 
 
 
+% replaceVars(+State, +Expr, -Expr)
+replaceVars(S, Expr, Expr1) :-
+  Expr =.. [F, AExpr, BExpr],
+  member(F, [+, -, *, /]),
+  !,
+  replaceVars(S, BExpr, BExpr1),
+  replaceVars(S, AExpr, AExpr1),
+  Expr1 =.. [F, AExpr1, BExpr1].
+
+replaceVars(S, array(ArrName, IExpr), array(ArrName, IExpr1)) :-
+  !,
+  replaceVars(S, IExpr, IExpr1).
+
+replaceVars(_, Expr, Expr) :-
+  number(Expr),
+  !.
+
+replaceVars(S, VarName, VarValue) :-
+  functor(VarName, _, K),
+  K == 0,
+  valLookup(S, VarName, VarValue).
+
+
 % valLookup(+State, +Id, -Value)
 valLookup(state(_, _, Stack), array(Id, IExpr), Value) :-
   !,
@@ -47,21 +70,27 @@ auxValLookup([v(OtherKey, _) | ES], Key, Value) :-
 
 
 % valSet(+State, +Id, +Value, -NewState)
-valSet(state(Is, PCs, Stack)
+valSet( State
       , array(Id, IExpr)
       , VExpr
       , state(Is, PCs, [v(array(Id, Index), Value) | Stack])
       ) :-
+  State = state(Is, PCs, Stack),
   !,
-  Index is IExpr,
-  Value is VExpr.
+  replaceVars(State, IExpr, IExpr1),
+  replaceVars(State, VExpr, VExpr1),
+  Index is IExpr1,
+  Value is VExpr1.
 
-valSet(state(Is, PCs, Stack)
+valSet( State
       , Id
       , VExpr
       , state(Is, PCs, [v(Id, Value) | Stack])
       ) :-
+  State = state(Is, PCs, Stack),
   functor(Id, F, K), % make the cut green
   F/K \= array/2,   
-  Value is VExpr.
+  replaceVars(State, VExpr, VExpr1),
+  Value is VExpr1.
 
+dummyStackState(state([], [], [])).
