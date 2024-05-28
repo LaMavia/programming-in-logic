@@ -1,3 +1,5 @@
+:- op(700, xfx, <>).
+
 % state representation:
 % state(Instructions, PCs, Stack)
 %   Instructions: [instr(Index, Instruction)] 
@@ -26,13 +28,34 @@
 
 
 
+% replaceOperators(+Expr, -Expr)
+replaceOperators((AExpr <> BExpr), (AExpr1 =\= BExpr1)) :-
+  !,
+  replaceOperators(AExpr, AExpr1),
+  replaceOperators(BExpr, BExpr1).
+
+replaceOperators((AExpr = BExpr), (AExpr1 =:= BExpr1)) :-
+  !,
+  replaceOperators(AExpr, AExpr1),
+  replaceOperators(BExpr, BExpr1).
+
+replaceOperators(Expr, Expr1) :-
+  Expr =.. [F, AExpr, BExpr],
+  !,
+  replaceOperators(AExpr, AExpr1),
+  replaceOperators(BExpr, BExpr1),
+  Expr1 =.. [F, AExpr1, BExpr1].
+
+replaceOperators(Expr, Expr).
+
+
 % replaceVars(+State, +Expr, -Expr)
 replaceVars(S, Expr, Expr1) :-
   Expr =.. [F, AExpr, BExpr],
-  member(F, [+, -, *, /]),
+  member(F, [+, -, *, /, =:=, =/=, <]),
   !,
-  replaceVars(S, BExpr, BExpr1),
   replaceVars(S, AExpr, AExpr1),
+  replaceVars(S, BExpr, BExpr1),
   Expr1 =.. [F, AExpr1, BExpr1].
 
 replaceVars(S, array(ArrName, IExpr), array(ArrName, IExpr1)) :-
@@ -44,9 +67,9 @@ replaceVars(_, Expr, Expr) :-
   !.
 
 replaceVars(S, VarName, VarValue) :-
-  functor(VarName, _, K),
-  K == 0,
+  functor(VarName, _, 0),
   valLookup(S, VarName, VarValue).
+
 
 
 % valLookup(+State, +Id, -Value)
@@ -73,24 +96,35 @@ auxValLookup([v(OtherKey, _) | ES], Key, Value) :-
 valSet( State
       , array(Id, IExpr)
       , VExpr
-      , state(Is, PCs, [v(array(Id, Index), Value) | Stack])
+      , state(Is, PCs, NewStack)
       ) :-
   State = state(Is, PCs, Stack),
   !,
   replaceVars(State, IExpr, IExpr1),
   replaceVars(State, VExpr, VExpr1),
   Index is IExpr1,
-  Value is VExpr1.
+  Value is VExpr1,
+  replaceOrPush(Stack, array(Id, Index), Value, NewStack).
 
 valSet( State
       , Id
       , VExpr
-      , state(Is, PCs, [v(Id, Value) | Stack])
+      , state(Is, PCs, NewStack)
       ) :-
   State = state(Is, PCs, Stack),
   functor(Id, F, K), % make the cut green
   F/K \= array/2,   
   replaceVars(State, VExpr, VExpr1),
-  Value is VExpr1.
+  Value is VExpr1,
+  replaceOrPush(Stack, Id, Value, NewStack).
+
+
+
+% replaceOrPush(+Stack, +Id, +Value, -NewStack)
+replaceOrPush([], Id, Value, [v(Id, Value)]).
+replaceOrPush([v(Id, _) | T], Id, Value, [v(Id, Value) | T]) :- !.
+replaceOrPush([_ | Stack], Id, Value, NewStack) :-
+  replaceOrPush(Stack, Id, Value, NewStack).
+
 
 dummyStackState(state([], [], [])).
