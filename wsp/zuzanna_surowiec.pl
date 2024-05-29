@@ -28,39 +28,37 @@
 
 
 
+% preprocessProgram(+Program, -NewProgram)
+preprocessProgram(program(IS), program(NewIS)) :-
+  map(IS, preprocessProgramAux, NewIS).
+
+preprocessProgramAux(I, NI) :-
+  I =.. [F | Args],
+  map(Args, replaceOperators, NewArgs),
+  NI =.. [F | NewArgs].
+
+
+
+% Since comparison operators cannot be nested,
+% there's no need for recursion.
 % replaceOperators(+Expr, -Expr)
-replaceOperators((AExpr <> BExpr), (AExpr1 =\= BExpr1)) :-
-  !,
-  replaceOperators(AExpr, AExpr1),
-  replaceOperators(BExpr, BExpr1).
-
-replaceOperators((AExpr = BExpr), (AExpr1 =:= BExpr1)) :-
-  !,
-  replaceOperators(AExpr, AExpr1),
-  replaceOperators(BExpr, BExpr1).
-
-replaceOperators(Expr, Expr1) :-
-  Expr =.. [F, AExpr, BExpr],
-  !,
-  replaceOperators(AExpr, AExpr1),
-  replaceOperators(BExpr, BExpr1),
-  Expr1 =.. [F, AExpr1, BExpr1].
-
+replaceOperators((AExpr <> BExpr), (AExpr =\= BExpr)) :- !.
+replaceOperators((AExpr = BExpr), (AExpr =:= BExpr)) :- !.
 replaceOperators(Expr, Expr).
 
 
+
 % replaceVars(+State, +Expr, -Expr)
+replaceVars(S, array(ArrName, IExpr), array(ArrName, IExpr1)) :-
+  !,
+  replaceVars(S, IExpr, IExpr1).
+
 replaceVars(S, Expr, Expr1) :-
   Expr =.. [F, AExpr, BExpr],
-  member(F, [+, -, *, /, =:=, =/=, <]),
   !,
   replaceVars(S, AExpr, AExpr1),
   replaceVars(S, BExpr, BExpr1),
   Expr1 =.. [F, AExpr1, BExpr1].
-
-replaceVars(S, array(ArrName, IExpr), array(ArrName, IExpr1)) :-
-  !,
-  replaceVars(S, IExpr, IExpr1).
 
 replaceVars(_, Expr, Expr) :-
   number(Expr),
@@ -125,6 +123,16 @@ replaceOrPush([], Id, Value, [v(Id, Value)]).
 replaceOrPush([v(Id, _) | T], Id, Value, [v(Id, Value) | T]) :- !.
 replaceOrPush([_ | Stack], Id, Value, NewStack) :-
   replaceOrPush(Stack, Id, Value, NewStack).
+
+
+
+% map(@List, +P/2, @NewList)
+map([], _, []).
+map([X|XS], P, [Y|YS]) :-
+  G =.. [P, X, Y],
+  call(G),
+  map(XS, P, YS).
+
 
 
 dummyStackState(state([], [], [])).
