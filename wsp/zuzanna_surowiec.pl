@@ -1,11 +1,14 @@
 :- op(700, xfx, <>).
+:- [library(lists)].
 
 % state representation:
-% state(Instructions, PCs, Stack)
-%   Instructions: [instr(Index, Instruction)] 
+% state(InSection, LenInstrs, PCs, Stack, StateHistory)
+%   InSection: number of processes in section
+%   LenInstrs: number of instructions
 %   PCs: [pos(Pid, InstructionNumber)]
 %   Stack: [v(Key, Value)]
 %             ^ `Id` or an array expression `array(Id, Index)`
+%   StateHistory: [S0, ..., S(k-1)]
 %
 % For instance: 
 %   varaibles([ x ]).
@@ -16,15 +19,43 @@
 %   ]).
 % 
 % , for N=1, has the states:
-%   1. state([instr(1, assign(x, 1)), instr(2, assign(array(arr, 1), 5))], [pos(1, 1)], [])
-%   2. state([instr(1, assign(x, 1)), instr(2, assign(array(arr, 1), 5))], [pos(1, 2)], [v(x, 1)])
-%   3. state([instr(1, assign(x, 1)), instr(2, assign(array(arr, 1), 5))], [pos(1, 1)], [v(array(arr, 1), 5), v(x, 1)])
+%   S1 = state(2, [pos(1, 1)], [], [])
+%   S2 = state(2, [pos(1, 2)], [v(x, 1)], [S1])
+%   S3 = state(2, [pos(1, 1)], [v(array(arr, 1), 5), v(x, 1)], [S2, S1])
 % 
 % initState(+Program, +N, -StanPoczątkowy)
+initState(program(Instrs), _, state(0, L, [], [], [])) :-
+  length(Instrs, L).
 
+% before step:
+% unsafe - succeed
+% safe, already seen - fail
+% safe - go on
 
 
 % step(+Program, +StanWe, ?PrId, -StanWy)
+step(_, State, _, History) :-
+  member(State, History),
+  !,
+  fail.
+
+step( program(Instrs)
+    , state(InSection, LenInstrs, PCs, Stack, History),
+    , Pid
+    , state(NewPCs, NewStack, [State|History])
+  ) :-
+  assocLookup(PCs, Pid, 1, PidPC),               % get the current pid PC
+  valSet(Stack, pid, Pid, EvalStack),        % set the pid var
+  nth1(PidPC, Instrs, Instr),                % get the current instruction
+  evalInstr(Instr, Stack, NewStack),         % eval the instruction 
+  NewPidPC is (PidPC - 1) mod LenInstrs + 1,     % move to the next instruction
+  replaceOrPush(PCs, Pid, NewPidPC, NewPCs).     % update the pid PC 
+  
+
+
+
+% evalInstr(Instr, Stack, NewStack)
+% evalInstr
 
 
 
@@ -48,7 +79,7 @@ replaceOperators(Expr, Expr).
 
 
 
-% replaceVars(+State, +Expr, -Expr)
+% replaceVars(+Stack, +Expr, -Expr)
 replaceVars(S, array(ArrName, IExpr), array(ArrName, IExpr1)) :-
   !,
   replaceVars(S, IExpr, IExpr1).
@@ -70,59 +101,65 @@ replaceVars(S, VarName, VarValue) :-
 
 
 
-% valLookup(+State, +Id, -Value)
-valLookup(state(_, _, Stack), array(Id, IExpr), Value) :-
+% valLookup(+Stack, +Id, -Value)
+valLookup(Stack, array(Id, IExpr), Value) :-
   !,
   Index is IExpr,
-  auxValLookup(Stack, array(Id, Index), Value).
+  assocLookup(Stack, array(Id, Index), 0, Value).
 
-valLookup(state(_, _, Stack), Id, Value) :-
+valLookup(state(_, Stack, _), Id, Value) :-
   functor(Id, F, K),              % make the last cut green 
   F/K \= array/2,
-  auxValLookup(Stack, Id, Value).
-
-% auxValLookup(+Stack, +Id, -Value)
-auxValLookup([], _, 0) :- !.
-auxValLookup([v(Key, Value) | _], Key, Value) :- !.
-auxValLookup([v(OtherKey, _) | ES], Key, Value) :- 
-  OtherKey \= Key,              % make the last cut green
-  auxValLookup(ES, Key, Value).
+  assocLookup(Stack, Id, 0, Value).
 
 
+% assocLookup(+Assoc, +Key, +DefaultValue, -Value)
+assocLookup([], _, Value, Value).
+assocLookup([X | _], Key, _, Value) :-
+  X =.. [_, Key, Value],
+  !.
+assocLookup([X | XS], Key, DefaultValue, Value) :-
+  X =.. [_, OtherKey, _], % make the previous cut green
+  OtherKey \= Key,
+  assocLookup(XS, Key, DefaultValue, Value).
 
-% valSet(+State, +Id, +Value, -NewState)
-valSet( State
+
+
+% valSet(+Stack, +Id, +Value, -NewStack)
+valSet( Stack
       , array(Id, IExpr)
       , VExpr
-      , state(Is, PCs, NewStack)
+      , NewStack
       ) :-
-  State = state(Is, PCs, Stack),
   !,
-  replaceVars(State, IExpr, IExpr1),
-  replaceVars(State, VExpr, VExpr1),
+  replaceVars(Stack, IExpr, IExpr1),
+  replaceVars(Stack, VExpr, VExpr1),
   Index is IExpr1,
   Value is VExpr1,
   replaceOrPush(Stack, array(Id, Index), Value, NewStack).
 
-valSet( State
+valSet( Stack
       , Id
       , VExpr
-      , state(Is, PCs, NewStack)
+      , NewStack
       ) :-
-  State = state(Is, PCs, Stack),
   functor(Id, F, K), % make the cut green
   F/K \= array/2,   
-  replaceVars(State, VExpr, VExpr1),
+  replaceVars(Stack, VExpr, VExpr1),
   Value is VExpr1,
   replaceOrPush(Stack, Id, Value, NewStack).
 
 
 
-% replaceOrPush(+Stack, +Id, +Value, -NewStack)
+% replaceOrPush(+Assoc, +Id, +Value, -NewStack)
 replaceOrPush([], Id, Value, [v(Id, Value)]).
-replaceOrPush([v(Id, _) | T], Id, Value, [v(Id, Value) | T]) :- !.
-replaceOrPush([_ | Stack], Id, Value, NewStack) :-
-  replaceOrPush(Stack, Id, Value, NewStack).
+replaceOrPush([X | XS], Id, Value, [X1 | XS]) :- 
+  X =.. [F, Id, _],
+  !,
+  X1 =.. [F, Id, Value].
+
+replaceOrPush([X | XS], Id, Value, [X | YS]) :-
+  replaceOrPush(XS, Id, Value, YS).
 
 
 
