@@ -3,11 +3,11 @@
 :- dynamic step/8, evalInstr/3, replaceVars/3.
 
 % state representation:
-% state(LenInstrs, PCs, Stack)
-%   InSection: number of processes in section
+% state(SectionLines, LenInstrs, PCs, Stack)
+%   SectionLines: list of instruction line numbers containing `section`
 %   LenInstrs: number of instructions
-%   PCs: [pos(Pid, InstructionNumber)]
-%   Stack: [v(Key, Value)]
+%   PCs: [pair(Pid, InstructionNumber)]
+%   Stack: [pair(Key, Value)]
 %             ^ `Id` or an array expression `array(Id, Index)`
 %
 % For instance: 
@@ -24,8 +24,28 @@
 %   S3 = state(2, [pos(1, 1)], [v(array(arr, 1), 5), v(x, 1)]) H3 = [S2, S1]
 % 
 % initState(+Program, +N, -StanPoczątkowy)
-initState(program(Instrs), N, state(N, L, [], [])) :-
+initState(program(Instrs), N, state(SectionLines, N, L, [], [])) :-
+  findIncides(Instrs, sekcja, SectionLines),
   length(Instrs, L).
+
+
+
+% findIncides(+List, +Value, ?Indices)
+findIncides(Xs, V, Ixs) :-
+  findIncides(Xs, V, 1, Ixs).
+
+
+
+% findIncides(+List, +Value, +Index, ?Indices)
+findIncides([], _, _, []).
+findIncides([X | XS], V, N, LS) :-
+  N1 is N + 1,
+  ( X = V -> LS = [N | LS1]
+  ; LS = LS1
+  ),
+  findIncides(XS, V, N1, LS1).
+
+
 
 % before step:
 % unsafe - succeed
@@ -33,14 +53,16 @@ initState(program(Instrs), N, state(N, L, [], [])) :-
 % safe - go on
 
 
-% step(+Program, +StanWe, +History, +CallStack, ?PrId, -StanWy, -NewHistory, -NewCallStack)
+% step(+Program, +StanWe, +History   , +CallStack
+%     , ?PrId  , -StanWy, -NewHistory, -NewCallStack
+%     )
 step(_, State, History, _, _, _, History, _) :-
   member(State, History),
   !,
   fail.
 
 step(P, S, H, CS, Pid, S1, H1, CS1) :-
-  arg(1, S, N),
+  arg(2, S, N),
   var(Pid),
   !,
   step_gen(0, N, [P, S, H, CS], [S1, H1, CS1]).
@@ -50,11 +72,11 @@ step( program(Instrs)
     , History
     , CS
     , Pid
-    , state(N, L, NewPCs, NewStack)
+    , state(SIx, N, L, NewPCs, NewStack)
     , [State | History]
     , [pair(Pid, PidPC) | CS]
     ) :-
-  State = state(N, L, PCs, Stack),
+  State = state(SIx, N, L, PCs, Stack),
   integer(Pid),
   Pid >= 0,
   Pid < N,
@@ -62,8 +84,8 @@ step( program(Instrs)
   valSet(Stack, pid, Pid, EvalStack),         % set the pid var
   nth1(PidPC, Instrs, Instr),                 % get the current instruction
   evalInstr( Instr                            % eval the instruction 
-           , state(N, L, PCs, EvalStack)
-           , state(N, L, PCs1, NewStack)
+           , state(SIx, N, L, PCs, EvalStack)
+           , state(SIx, N, L, PCs1, NewStack)
            ),    
   assocLookup(PCs1, Pid, PidPC, PidPC1),      % get the updated pid
   NewPidPC is (PidPC1 mod L) + 1,             % move to the next instruction
@@ -79,6 +101,7 @@ step_gen(Pid, N, LArgs, RArgs) :-
   Pid < N,
   append(LArgs, [Pid | RArgs], Args),
   G =.. [step | Args],
+  format("G=~q\n", [G]),
   call(G).
 
 step_gen(Pid, N, LArgs, RArgs) :-
@@ -87,16 +110,24 @@ step_gen(Pid, N, LArgs, RArgs) :-
   step_gen(Pid1, N, LArgs, RArgs).
 
 
+
+% isUnsafe(+Program, +State)
+isUnsafe(program(Instrs, State(SIx, N, L)))
+
+
+
+
+
 % evalInstr(Instr, Stack, NewStack)
 evalInstr( assign(Id, VExpr)
-         , state(N, L, PCs, Stack)
-         , state(N, L, PCs, NewStack)
+         , state(SIx, N, L, PCs, Stack)
+         , state(SIx, N, L, PCs, NewStack)
          ) :-
   valSet(Stack, Id, VExpr, NewStack).
 
 evalInstr( goto(M)
-         , state(N, L, PCs , Stack)
-         , state(N, L, PCs1, Stack)
+         , state(SIx, N, L, PCs , Stack)
+         , state(SIx, N, L, PCs1, Stack)
          ) :-
   M1 is M - 1,
   valLookup(Stack, pid, Pid),
@@ -106,11 +137,13 @@ evalInstr( condGoto(Cond, M)
          , State
          , NewState
          ) :-
-  arg(4, State, Stack),
+  arg(5, State, Stack),
   replaceVars(Stack, Cond, Cond1),
   ( call(Cond1) -> evalInstr(goto(M), State, NewState)
   ; NewState = State
   ).
+
+evalInstr(sekcja, State, State).
 
 
 
@@ -225,8 +258,7 @@ replaceOrPush([X | XS], Id, Value, [X | YS]) :-
 % map(@List, :P/2, @NewList)
 map([], _, []).
 map([X|XS], P, [Y|YS]) :-
-  G =.. [P, X, Y],
-  call(G),
+  call(P, X, Y),
   map(XS, P, YS).
 
 
