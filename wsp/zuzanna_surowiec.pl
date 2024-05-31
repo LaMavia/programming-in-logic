@@ -66,9 +66,10 @@ step( program(Instrs)
            , state(N, L, PCs1, NewStack)
            ),    
   assocLookup(PCs1, Pid, PidPC, PidPC1),      % get the updated pid
-  NewPidPC is ((PidPC1 - 1) mod L + 1) mod L, % move to the next instruction
+  NewPidPC is (PidPC1 mod L) + 1,             % move to the next instruction
   replaceOrPush(PCs1, Pid, NewPidPC, NewPCs). % update the pid PC 
   
+
 
 step_gen(Pid, N, _, _) :-
   (Pid < 0 ; Pid > N) -> fail.
@@ -97,8 +98,19 @@ evalInstr( goto(M)
          , state(N, L, PCs , Stack)
          , state(N, L, PCs1, Stack)
          ) :-
+  M1 is M - 1,
   valLookup(Stack, pid, Pid),
-  replaceOrPush(PCs, Pid, M, PCs1).
+  replaceOrPush(PCs, Pid, M1, PCs1).
+
+evalInstr( condGoto(Cond, M)
+         , State
+         , NewState
+         ) :-
+  arg(4, State, Stack),
+  replaceVars(Stack, Cond, Cond1),
+  ( call(Cond1) -> evalInstr(goto(M), State, NewState)
+  ; NewState = State
+  ).
 
 
 
@@ -157,6 +169,7 @@ valLookup(Stack, Id, Value) :-
   functor(Id, F, K),              % make the last cut green 
   F/K \= array/2,
   assocLookup(Stack, Id, 0, Value).
+
 
 
 % assocLookup(+Assoc, +Key, +DefaultValue, -Value)
@@ -220,7 +233,7 @@ map([X|XS], P, [Y|YS]) :-
 
 dummyStackState(state(3, 10000, [], [], [])).
 dummyProgram(
-  program([ goto(10)
+  program([ condGoto(pid = 1, 3)
           , assign(x, 5)
           , goto(1)
           ])
