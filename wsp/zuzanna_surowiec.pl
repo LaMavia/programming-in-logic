@@ -1,14 +1,14 @@
 :- op(700, xfx, <>).
 :- [library(lists)].
+:- dynamic step/8, evalInstr/3, replaceVars/3.
 
 % state representation:
-% state(InSection, LenInstrs, PCs, Stack, StateHistory)
+% state(LenInstrs, PCs, Stack)
 %   InSection: number of processes in section
 %   LenInstrs: number of instructions
 %   PCs: [pos(Pid, InstructionNumber)]
 %   Stack: [v(Key, Value)]
 %             ^ `Id` or an array expression `array(Id, Index)`
-%   StateHistory: [S0, ..., S(k-1)]
 %
 % For instance: 
 %   varaibles([ x ]).
@@ -19,12 +19,12 @@
 %   ]).
 % 
 % , for N=1, has the states:
-%   S1 = state(2, [pos(1, 1)], [], [])
-%   S2 = state(2, [pos(1, 2)], [v(x, 1)], [S1])
-%   S3 = state(2, [pos(1, 1)], [v(array(arr, 1), 5), v(x, 1)], [S2, S1])
+%   S1 = state(2, [pos(1, 1)], []), H1 = []
+%   S2 = state(2, [pos(1, 2)], [v(x, 1)]) H2 = [S1]
+%   S3 = state(2, [pos(1, 1)], [v(array(arr, 1), 5), v(x, 1)]) H3 = [S2, S1]
 % 
 % initState(+Program, +N, -StanPoczątkowy)
-initState(program(Instrs), _, state(0, L, [], [], [])) :-
+initState(program(Instrs), N, state(N, L, [], [])) :-
   length(Instrs, L).
 
 % before step:
@@ -33,29 +33,72 @@ initState(program(Instrs), _, state(0, L, [], [], [])) :-
 % safe - go on
 
 
-% step(+Program, +StanWe, ?PrId, -StanWy)
-step(_, State, _, History) :-
+% step(+Program, +StanWe, +History, +CallStack, ?PrId, -StanWy, -NewHistory, -NewCallStack)
+step(_, State, History, _, _, _, History, _) :-
   member(State, History),
   !,
   fail.
 
+step(P, S, H, CS, Pid, S1, H1, CS1) :-
+  arg(1, S, N),
+  var(Pid),
+  !,
+  step_gen(0, N, [P, S, H, CS], [S1, H1, CS1]).
+
 step( program(Instrs)
-    , state(InSection, LenInstrs, PCs, Stack, History),
+    , State
+    , History
+    , CS
     , Pid
-    , state(NewPCs, NewStack, [State|History])
-  ) :-
-  assocLookup(PCs, Pid, 1, PidPC),               % get the current pid PC
-  valSet(Stack, pid, Pid, EvalStack),        % set the pid var
-  nth1(PidPC, Instrs, Instr),                % get the current instruction
-  evalInstr(Instr, Stack, NewStack),         % eval the instruction 
-  NewPidPC is (PidPC - 1) mod LenInstrs + 1,     % move to the next instruction
-  replaceOrPush(PCs, Pid, NewPidPC, NewPCs).     % update the pid PC 
+    , state(N, L, NewPCs, NewStack)
+    , [State | History]
+    , [pair(Pid, PidPC) | CS]
+    ) :-
+  State = state(N, L, PCs, Stack),
+  integer(Pid),
+  Pid >= 0,
+  Pid < N,
+  assocLookup(PCs, Pid, 1, PidPC),            % get the current pid PC
+  valSet(Stack, pid, Pid, EvalStack),         % set the pid var
+  nth1(PidPC, Instrs, Instr),                 % get the current instruction
+  evalInstr( Instr                            % eval the instruction 
+           , state(N, L, PCs, EvalStack)
+           , state(N, L, PCs1, NewStack)
+           ),    
+  assocLookup(PCs1, Pid, PidPC, PidPC1),      % get the updated pid
+  NewPidPC is ((PidPC1 - 1) mod L + 1) mod L, % move to the next instruction
+  replaceOrPush(PCs1, Pid, NewPidPC, NewPCs). % update the pid PC 
   
 
+step_gen(Pid, N, _, _) :-
+  (Pid < 0 ; Pid > N) -> fail.
+
+step_gen(Pid, N, LArgs, RArgs) :-
+  Pid >= 0,
+  Pid < N,
+  append(LArgs, [Pid | RArgs], Args),
+  G =.. [step | Args],
+  call(G).
+
+step_gen(Pid, N, LArgs, RArgs) :-
+  Pid < N,
+  Pid1 is Pid + 1,
+  step_gen(Pid1, N, LArgs, RArgs).
 
 
 % evalInstr(Instr, Stack, NewStack)
-% evalInstr
+evalInstr( assign(Id, VExpr)
+         , state(N, L, PCs, Stack)
+         , state(N, L, PCs, NewStack)
+         ) :-
+  valSet(Stack, Id, VExpr, NewStack).
+
+evalInstr( goto(M)
+         , state(N, L, PCs , Stack)
+         , state(N, L, PCs1, Stack)
+         ) :-
+  valLookup(Stack, pid, Pid),
+  replaceOrPush(PCs, Pid, M, PCs1).
 
 
 
@@ -81,10 +124,12 @@ replaceOperators(Expr, Expr).
 
 % replaceVars(+Stack, +Expr, -Expr)
 replaceVars(S, array(ArrName, IExpr), array(ArrName, IExpr1)) :-
+  nonvar(IExpr),
   !,
   replaceVars(S, IExpr, IExpr1).
 
 replaceVars(S, Expr, Expr1) :-
+  nonvar(Expr),
   Expr =.. [F, AExpr, BExpr],
   !,
   replaceVars(S, AExpr, AExpr1),
@@ -96,6 +141,7 @@ replaceVars(_, Expr, Expr) :-
   !.
 
 replaceVars(S, VarName, VarValue) :-
+  nonvar(VarName),
   functor(VarName, _, 0),
   valLookup(S, VarName, VarValue).
 
@@ -107,7 +153,7 @@ valLookup(Stack, array(Id, IExpr), Value) :-
   Index is IExpr,
   assocLookup(Stack, array(Id, Index), 0, Value).
 
-valLookup(state(_, Stack, _), Id, Value) :-
+valLookup(Stack, Id, Value) :-
   functor(Id, F, K),              % make the last cut green 
   F/K \= array/2,
   assocLookup(Stack, Id, 0, Value).
@@ -152,7 +198,7 @@ valSet( Stack
 
 
 % replaceOrPush(+Assoc, +Id, +Value, -NewStack)
-replaceOrPush([], Id, Value, [v(Id, Value)]).
+replaceOrPush([], Id, Value, [pair(Id, Value)]).
 replaceOrPush([X | XS], Id, Value, [X1 | XS]) :- 
   X =.. [F, Id, _],
   !,
@@ -163,7 +209,7 @@ replaceOrPush([X | XS], Id, Value, [X | YS]) :-
 
 
 
-% map(@List, +P/2, @NewList)
+% map(@List, :P/2, @NewList)
 map([], _, []).
 map([X|XS], P, [Y|YS]) :-
   G =.. [P, X, Y],
@@ -172,4 +218,10 @@ map([X|XS], P, [Y|YS]) :-
 
 
 
-dummyStackState(state([], [], [])).
+dummyStackState(state(3, 10000, [], [], [])).
+dummyProgram(
+  program([ goto(10)
+          , assign(x, 5)
+          , goto(1)
+          ])
+).
