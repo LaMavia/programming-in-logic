@@ -94,7 +94,7 @@ step( program(Instrs)
 
 
 step_gen(Pid, N, _, _) :-
-  (Pid < 0 ; Pid > N) -> fail.
+  (Pid < 0 ; Pid >= N) -> fail.
 
 step_gen(Pid, N, LArgs, RArgs) :-
   Pid >= 0,
@@ -111,10 +111,25 @@ step_gen(Pid, N, LArgs, RArgs) :-
 
 
 
-% isUnsafe(+Program, +State)
-isUnsafe(program(Instrs, State(SIx, N, L)))
+% isUnsafe(+State)
+isUnsafe(state(SIx, N, _, PCs, _)) :-
+  isUnsafe(SIx, 0, N, PCs, 0).
 
+isUnsafe(_, _, _, _, CF) :-
+  CF > 1, 
+  !.
 
+isUnsafe(_, Pid, N, _, _) :-
+  (Pid < 0 ; Pid > N) -> fail.
+
+isUnsafe(SIx, Pid, N, PCs, CF) :-
+  Pid < N,
+  assocLookup(PCs, Pid, 1, PidPC),
+  ( member(PidPC, SIx) -> CF1 is CF + 1
+  ; CF1 = CF
+  ),
+  Pid1 is Pid + 1,
+  isUnsafe(SIx, Pid1, N, PCs, CF1).
 
 
 
@@ -265,7 +280,7 @@ map([X|XS], P, [Y|YS]) :-
 
 dummyStackState(state(3, 10000, [], [], [])).
 dummyProgram(
-  program([ condGoto(pid = 1, 3)
+  program([ sekcja
           , assign(x, 5)
           , goto(1)
           ])
