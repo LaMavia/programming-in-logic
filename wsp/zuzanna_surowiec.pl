@@ -23,11 +23,11 @@ verify(N, File) :-
 %                 , -State, -History, -Moves, -InSection
 %       ) 
 
-verify(_, S, H, CS, S, H, CS, []) :-
-  isUnsafe(S),
+verify(_, S, H, CS, S, H, CS, IS) :-
+  isUnsafe(S, IS),
   !.
 
-verify(_, S, H, CS, S, H, CS, []) :-
+verify(_, S, H, CS, S, H, CS, _) :-
   member(S, H),
   !,
   format('FOUND!~n'),
@@ -145,25 +145,24 @@ step_gen(Pid, N, LArgs, RArgs) :-
 
 
 
-% isUnsafe(+State)
-isUnsafe(state(SIx, N, _, PCs, _)) :-
-  isUnsafe(SIx, 0, N, PCs, 0).
+% isUnsafe(+State, -PidsInSection)
+isUnsafe(state(SIx, N, _, PCs, _), IS) :-
+  isUnsafe(SIx, 0, N, PCs, IS),
+  length(IS, L),
+  L > 1.
 
-isUnsafe(_, _, _, _, CF) :-
-  CF > 1, 
+isUnsafe(_, Pid, N, _, []) :-
+  (Pid < 0 ; Pid >= N),
   !.
 
-isUnsafe(_, Pid, N, _, _) :-
-  (Pid < 0 ; Pid > N) -> fail.
-
-isUnsafe(SIx, Pid, N, PCs, CF) :-
+isUnsafe(SIx, Pid, N, PCs, IS) :-
   Pid < N,
   assocLookup(PCs, Pid, 1, PidPC),
-  ( member(PidPC, SIx) -> CF1 is CF + 1
-  ; CF1 = CF
+  ( member(PidPC, SIx) -> IS = [Pid | IS1]
+  ; IS = IS1
   ),
   Pid1 is Pid + 1,
-  isUnsafe(SIx, Pid1, N, PCs, CF1).
+  isUnsafe(SIx, Pid1, N, PCs, IS1).
 
 
 
@@ -314,5 +313,5 @@ map([X|XS], P, [Y|YS]) :-
 
 dummyStackState(state(3, 10000, [], [], [])).
 dummyProgram(
-  program([assign(x, pid), sekcja, goto(1)])
+  program([sekcja])
 ).
