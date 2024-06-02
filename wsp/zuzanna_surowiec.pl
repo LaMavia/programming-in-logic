@@ -3,7 +3,9 @@
 :- dynamic step/8, evalInstr/3, replaceVars/3.
 
 % verify(+N, +File)
+
 verify(N, File) :-
+  N > 0,
   access_file(File, read), 
   open(File, read, Stream),
   read(Stream, variables(_Vars)),
@@ -12,17 +14,24 @@ verify(N, File) :-
   initState(program(Instrs), N, S),
   (  arg(1, S, []) 
   -> format("Program jest poprawny (bezpieczny).~n", [])
-  ;  verify(program(Instrs), S, CS, IS) 
+  ;  verify(program(Instrs), S, [], [], _, _, CS, IS) 
   -> printUnsafe(CS, IS)
   ;  format("Program jest poprawny (bezpieczny).~n", [])
   ).
+
+verify(N, File) :-
+  (  \+ access_file(File, read) 
+  -> format("Error: brak pliku o nazwie - ~s~n", [File])
+  ;  N =< 0  
+  -> format("Error: parametr ~p powinien byc liczba > 0", [N])
+  ),
+  fail.
 
 
 
 % verify( +Program, +State, +History, +Moves
 %                 , -State, -History, -Moves, -InSection
 %       ) 
-
 verify(_, S, H, CS, S, H, CS, IS) :-
   isUnsafe(S, IS),
   !.
@@ -30,18 +39,41 @@ verify(_, S, H, CS, S, H, CS, IS) :-
 verify(_, S, H, CS, S, H, CS, _) :-
   member(S, H),
   !,
-  format('FOUND!~n'),
   fail.
 
-% verify(_, S, H, CS, S, H, CS, _).
-
-% step(+Program, +StanWe, +History   , +CallStack
-%     , ?PrId  , -StanWy, -NewHistory, -NewCallStack
-%     )
 verify(P, S, H, CS, S1, H1, CS1, IS) :-
   step(P, S, H, CS, _, S0, H0, CS0),
-  % format("H0=~q~n", [H0]),
   verify(P, S0, H0, CS0, S1, H1, CS1, IS).
+
+
+
+% printUnsafe(+Steps, +InSection)
+printUnsafe(CS, IS) :-
+  format("Program jest niepoprawny.~nNiepoprawny przeplot:~n"),
+  printSteps(CS),
+  write("Procesy w sekcji: "),
+  printListSep(IS, ", ", ".").
+
+
+
+% printSteps(+Steps)
+printSteps([]).
+
+printSteps([pair(Pid, L) | XS]) :-
+  format("  Proces ~d: ~d~n", [Pid, L]),
+  printSteps(XS).
+
+
+
+% printListSep(+List, +Separator, +Final)
+printListSep([], _, _).
+printListSep([X], _, F) :-
+  !,
+  format("~p~s", [X, F]).
+
+printListSep([X | XS], S, F) :-
+  format("~p~s", [X, S]),
+  printListSep(XS, S, F).
 
 
 
