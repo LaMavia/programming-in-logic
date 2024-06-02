@@ -4,14 +4,26 @@
 
 % verify(+N, +File)
 
+verify(N, _) :-
+  (\+ integer(N) ; N =< 0),
+  !,
+  format("Error: parametr ~p powinien byc liczba > 0", [N]),
+  fail.
+
 verify(N, File) :-
   N > 0,
-  access_file(File, read), 
+  set_prolog_flag(fileerrors, off),
   open(File, read, Stream),
-  read(Stream, variables(_Vars)),
-  read(Stream, arrays(_Arrs)),
+  read(Stream, variables(Vars)),
+  read(Stream, arrays(Arrs)),
   read(Stream, program(Instrs)),
-  initState(program(Instrs), N, S),
+  !,                                % program is correctly written
+  initState( variables(Vars)
+           , arrays(Arrs)
+           , program(Instrs)
+           , N
+           , S
+           ),
   (  arg(1, S, []) 
   -> format("Program jest poprawny (bezpieczny).~n", [])
   ;  verify(program(Instrs), S, [], [], _, _, CS, IS) 
@@ -19,12 +31,8 @@ verify(N, File) :-
   ;  format("Program jest poprawny (bezpieczny).~n", [])
   ).
 
-verify(N, File) :-
-  (  \+ access_file(File, read) 
-  -> format("Error: brak pliku o nazwie - ~s~n", [File])
-  ;  N =< 0  
-  -> format("Error: parametr ~p powinien byc liczba > 0", [N])
-  ),
+verify(_, File) :-
+  format("Error: brak pliku o nazwie - ~s~n", [File]),
   fail.
 
 
@@ -49,9 +57,9 @@ verify(P, S, H, CS, S1, H1, CS1, IS) :-
 
 % printUnsafe(+Steps, +InSection)
 printUnsafe(CS, IS) :-
-  format("Program jest niepoprawny.~nNiepoprawny przeplot:~n"),
+  format("Program jest niepoprawny.~nNiepoprawny przeplot:~n", []),
   printSteps(CS),
-  write("Procesy w sekcji: "),
+  format("Procesy w sekcji: ", []),
   printListSep(IS, ", ", ".").
 
 
@@ -67,6 +75,7 @@ printSteps([pair(Pid, L) | XS]) :-
 
 % printListSep(+List, +Separator, +Final)
 printListSep([], _, _).
+
 printListSep([X], _, F) :-
   !,
   format("~p~s", [X, F]).
@@ -98,10 +107,31 @@ printListSep([X | XS], S, F) :-
 %   S2 = state(2, [pos(1, 2)], [v(x, 1)]) H2 = [S1]
 %   S3 = state(2, [pos(1, 1)], [v(array(arr, 1), 5), v(x, 1)]) H3 = [S2, S1]
 % 
-% initState(+Program, +N, -StanPoczątkowy)
-initState(program(Instrs), N, state(SectionLines, N, L, [], [])) :-
+% initState(+Variables, +Arrays, +Program, +N, -StanPoczątkowy)
+initState( variables(VarNames)
+         , arrays(ArrayNames)
+         , program(Instrs)
+         , N
+         , state(SectionLines, N, L, [], Stack)
+         ) :-
+  maplist(initVar, VarNames, Vars),
+  maplist(initArray(N, 0), ArrayNames, Arrs),
+  append([Vars | Arrs], Stack),
   findIncides(Instrs, sekcja, SectionLines),
   length(Instrs, L).
+
+
+initVar(X, pair(X, 0)).
+
+% initArray(N, I, X, Arr)
+initArray(N, I, _, []) :-
+  (I >= N ; I < 0),
+  !.
+
+initArray(N, I, X, [pair(array(X, I), 0) | Tail]) :-
+  I < N,
+  I1 is I + 1,
+  initArray(N, I1, X, Tail).
 
 
 
@@ -132,6 +162,13 @@ step(P, S, H, CS, Pid, S1, H1, CS1) :-
   !,
   step_gen(0, N, [P, S, H, CS], [S1, H1, CS1]).
 
+% step(_, _, _, _, Pid, )
+
+step(_, S, H, _, _, _, _, _) :-
+  member(S, H),
+  !,
+  fail.
+
 step( program(Instrs)
     , State
     , History
@@ -141,6 +178,7 @@ step( program(Instrs)
     , [State | History]
     , [pair(Pid, PidPC) | CS]
     ) :-
+  \+ member(State, History),
   State = state(SIx, N, L, PCs, Stack),
   integer(Pid),
   Pid >= 0,
@@ -150,8 +188,9 @@ step( program(Instrs)
   nth1(PidPC, Instrs, Instr),                 % get the current instruction
   evalInstr( Instr                            % eval the instruction 
            , state(SIx, N, L, PCs, EvalStack)
-           , state(SIx, N, L, PCs1, NewStack)
+           , state(SIx, N, L, PCs1, PEStack)
            ),    
+  assocDelete(PEStack, pid, NewStack),
   assocLookup(PCs1, Pid, PidPC, PidPC1),      % get the updated pid
   NewPidPC is (PidPC1 mod L) + 1,             % move to the next instruction
   replaceOrPush(PCs1, Pid, NewPidPC, NewPCs). % update the pid PC 
@@ -171,6 +210,7 @@ step_gen(Pid, N, LArgs, RArgs) :-
   call(G).
 
 step_gen(Pid, N, LArgs, RArgs) :-
+  Pid >= 0,
   Pid < N,
   Pid1 is Pid + 1,
   step_gen(Pid1, N, LArgs, RArgs).
@@ -332,6 +372,18 @@ replaceOrPush([X | XS], Id, Value, [X1 | XS]) :-
 
 replaceOrPush([X | XS], Id, Value, [X | YS]) :-
   replaceOrPush(XS, Id, Value, YS).
+
+
+
+assocDelete([], _, []).
+
+assocDelete([X | XS], K, YS) :-
+  X =.. [_, K, _],
+  !,
+  assocDelete(XS, K, YS).
+
+assocDelete([X | XS], K, [X | YS]) :-
+  assocDelete(XS, K, YS).
 
 
 
