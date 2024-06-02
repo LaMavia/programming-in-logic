@@ -2,6 +2,49 @@
 :- [library(lists)].
 :- dynamic step/8, evalInstr/3, replaceVars/3.
 
+% verify(+N, +File)
+verify(N, File) :-
+  access_file(File, read), 
+  open(File, read, Stream),
+  read(Stream, variables(_Vars)),
+  read(Stream, arrays(_Arrs)),
+  read(Stream, program(Instrs)),
+  initState(program(Instrs), N, S),
+  (  arg(1, S, []) 
+  -> format("Program jest poprawny (bezpieczny).~n", [])
+  ;  verify(program(Instrs), S, CS, IS) 
+  -> printUnsafe(CS, IS)
+  ;  format("Program jest poprawny (bezpieczny).~n", [])
+  ).
+
+
+
+% verify( +Program, +State, +History, +Moves
+%                 , -State, -History, -Moves, -InSection
+%       ) 
+
+verify(_, S, H, CS, S, H, CS, []) :-
+  isUnsafe(S),
+  !.
+
+verify(_, S, H, CS, S, H, CS, []) :-
+  member(S, H),
+  !,
+  format('FOUND!~n'),
+  fail.
+
+% verify(_, S, H, CS, S, H, CS, _).
+
+% step(+Program, +StanWe, +History   , +CallStack
+%     , ?PrId  , -StanWy, -NewHistory, -NewCallStack
+%     )
+verify(P, S, H, CS, S1, H1, CS1, IS) :-
+  step(P, S, H, CS, _, S0, H0, CS0),
+  % format("H0=~q~n", [H0]),
+  verify(P, S0, H0, CS0, S1, H1, CS1, IS).
+
+
+
 % state representation:
 % state(SectionLines, LenInstrs, PCs, Stack)
 %   SectionLines: list of instruction line numbers containing `section`
@@ -47,19 +90,9 @@ findIncides([X | XS], V, N, LS) :-
 
 
 
-% before step:
-% unsafe - succeed
-% safe, already seen - fail
-% safe - go on
-
-
 % step(+Program, +StanWe, +History   , +CallStack
 %     , ?PrId  , -StanWy, -NewHistory, -NewCallStack
 %     )
-step(_, State, History, _, _, _, History, _) :-
-  member(State, History),
-  !,
-  fail.
 
 step(P, S, H, CS, Pid, S1, H1, CS1) :-
   arg(2, S, N),
@@ -94,14 +127,15 @@ step( program(Instrs)
 
 
 step_gen(Pid, N, _, _) :-
-  (Pid < 0 ; Pid >= N) -> fail.
+  (Pid < 0 ; Pid >= N),
+  !,
+  fail.
 
 step_gen(Pid, N, LArgs, RArgs) :-
   Pid >= 0,
   Pid < N,
   append(LArgs, [Pid | RArgs], Args),
   G =.. [step | Args],
-  format("G=~q\n", [G]),
   call(G).
 
 step_gen(Pid, N, LArgs, RArgs) :-
@@ -280,8 +314,5 @@ map([X|XS], P, [Y|YS]) :-
 
 dummyStackState(state(3, 10000, [], [], [])).
 dummyProgram(
-  program([ sekcja
-          , assign(x, 5)
-          , goto(1)
-          ])
+  program([assign(x, pid), sekcja, goto(1)])
 ).
