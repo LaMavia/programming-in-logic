@@ -135,8 +135,18 @@ fragment(In, R, In) -->
   token(inside("{", "}", R)),
   !.
 
+fragment(In, R, Out) -->
+  var_name(V),
+  !,
+  { genvar(Out) },
+  { append(["phrase(", V, ", ", In, ", ", Out, ")"], R) }.
 
 
+
+% var_name(?Name)
+%
+% Accepts variables in the form of:
+% V ::= ('_' + Uppercase) (Letter + Digit + '_')*
 var_name([X|XS]) -->
   one_of([ uppercase, underscore ], X),
   some(one_of([letter, digit]), XS).
@@ -254,6 +264,7 @@ spaces --> [].
 % stream variable starting with "$S".
 genvar(S) :-
   gensym("'$VAR'", S).
+
 
 
 % gensym(+Nazwa, -Symbol)
