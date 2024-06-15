@@ -26,7 +26,7 @@ transform((Head :- Body)) -->
     gensym("$S", In),
     gensym("$S", Out)
   },
-  token(fragment(In, Out, Head)),
+  token(fragment(In, Head, Out)),
   token(transform_seq_rest(Out, X, RetBody)),
   token("-->"),
   token(transform_seq(In, X, RuleBody)),
@@ -35,43 +35,78 @@ transform((Head :- Body)) -->
   }.
 
 
-% @spec p :: String -> String -> [String] -> [String] -> String
+% @spec p :: String
+% p(-Repr)
+%
+% p(R) -->
+%   { 
+%     genvar(In)
+%   },
+%   token(fragment(In, Head, Out)),
+%
+
+
+% @spec p(+String, -[String], ?String)
+% p(+In, -Rep, ?Out)
+%
+p(In, R, Out) -->
+  fragment(In, F, Ic),
+  p(In, Ic, [F], R, Out).
+
+
+% @spec p(+String, +String, +[String], -[String], -String) 
 % p(+InOriginal, +InCurrent, +Accumulator, -Repr, -InNew)
 % 
 p(Io, Ic, U, R, In) -->
   token(","),
   !,
   fragment(Ic, X, Ic1),
-  U1 = [X, "," | U],
+  { U1 = [X, ",\n  " | U] },
   p(Io, Ic1, U1, R, In).
 
 
-p(Io, In, U, R, In) -->
+p(Io, Ic, U, R, In) -->
   token(";"),
   !,
-  fragment(Io, X, Ic),
-  U1 = [X, ";" | U],
-  p(Io, Ic, U1, R, In).
+  fragment(Io, X, Ic1),
+  { U1 = [X, "\n; ", US, ",\n  " | U] },
+  p(Io, Ic1, U1, R, In),
+  { % Unify the branch outputs.
+    % Calling it before p//5 leads 
+    % to excessive backtracking.
+    append([Ic, " = ", In], US)
+  }.
 
 
 p(Io, Ic, U, R, In) -->
   token("->"),
   !,
   fragment(Ic, X, Ic1),
-  U1 = [X, "->" | U],
+  { U1 = [X, "\n->" | U] },
   p(Io, Ic1, U1, R, In).
 
 
 p(_, Ic, U, R, Ic) -->
   token("."),
   !,
-  reverse(U, R).
+  { 
+    U1 = ["." | U],
+    reverse(U1, R)
+  }.
+
+
+p(_, Ic, U, R, Ic), ")" -->
+  token(")"),
+  !,
+  { reverse(U, R) }.
+
 
 % @spec fragment :: String -> String -> String
 % fragment(+In, -Repr, -Out)
 %
 fragment(In, "true", In) -->
-  token("[]"),
+  token("["),
+  token("]"),
   !.
 
 fragment(In, R, Out) -->
@@ -80,7 +115,15 @@ fragment(In, R, Out) -->
   !,
   { append([In, " = ", "[", Elems, " | ", Out, "]"], R) }.
 
-
+fragment(In, R, Out) -->
+  token("("),
+  !,
+  p(In, U, Out),
+  token(")"),
+  { 
+    append(U, UR),
+    append([ "( ", UR, "\n)" ], R) 
+  }.
 
 
 
@@ -105,14 +148,6 @@ inside(L, R, U, Inside) -->
   },
   inside(L, R, U1, Inside).
 
-% sep(?Repr)
-% Consumes skippable fragments, and returns their trimmed representation.
-% Succeeds at most once, so fragments need be ordered correctly.
-sep(T) --> 
-  { member(T, [",", ".", ";", "->", "(", ")"]) },
-  token(T),
-  !.
-
 
 % fragment(-In, -Out, -Parsed) 
 % fragment(In, Out, (In = [Elems | Out])) -->
@@ -135,8 +170,7 @@ spaces --> [].
 % Generates a string representing a fresh
 % stream variable starting with "$S".
 genvar(S) :-
-  gensym("$S", S).
-
+  gensym("'$VAR'", S).
 
 
 % gensym(+Nazwa, -Symbol)
@@ -149,4 +183,4 @@ gensym(Id, Sym) :-
   NewVal is OldVal + 1,
   set_flag(Id, NewVal),
   atom_codes(OldVal, OldValStr),
-  append(Id, OldValStr, Sym).
+  append([Id, "(", OldValStr, ")"], Sym).

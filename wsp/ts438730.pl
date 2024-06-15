@@ -1,6 +1,8 @@
+% Zuzanna Surowiec 438730
 :- op(700, xfx, <>).
 :- [library(lists)].
-:- dynamic step/8, evalInstr/3, replaceVars/3.
+
+
 
 % verify(+N, +File)
 
@@ -26,7 +28,7 @@ verify(N, File) :-
            ),
   (  arg(1, S, []) 
   -> format("Program jest poprawny (bezpieczny).~n", [])
-  ;  verify(program(Instrs), S, [], [], _, _, CS, IS) 
+  ;  verify(program(Instrs), N, S, CS, IS) 
   -> printUnsafe(CS, IS)
   ;  format("Program jest poprawny (bezpieczny).~n", [])
   ).
@@ -36,22 +38,42 @@ verify(_, File) :-
   fail.
 
 
+% verify(+Program, +N, +State, -Steps, -InSection)
+verify(Program, N, S0, CS, IS) :-
+    allInterlacings(N, Program, S0, [], [], [], AllStates, AllStacks),
+    nth0(Idx, AllStates, State), 
+    nth0(Idx, AllStacks, CS), 
+    isUnsafe(State, IS),
+    !.
 
-% verify( +Program, +State, +History, +Moves
-%                 , -State, -History, -Moves, -InSection
-%       ) 
-verify(_, S, H, CS, S, H, CS, IS) :-
-  isUnsafe(S, IS),
-  !.
-
-verify(_, S, H, CS, S, H, CS, _) :-
-  member(S, H),
-  !,
+verify(_, _, _) :-
+  !, 
   fail.
 
-verify(P, S, H, CS, S1, H1, CS1, IS) :-
-  step(P, S, H, CS, _, S0, H0, CS0),
-  verify(P, S0, H0, CS0, S1, H1, CS1, IS).
+% allInterlacings(+N, +Program, +State, +CallStack, +StateList, +CallStackList,
+% -NewStateList, -NewCallStackList)
+allInterlacings(_, _, State, _, StateList, StackList, StateList, StackList) :-
+    member(State, StateList).
+allInterlacings(N, Program, State, Stack, StateList, StackList, NewStateList, NewStackList) :-
+    \+ member(State, StateList),
+    nextInstruction(N, Program, [State|StateList], [Stack|StackList], State, 0, NewStateList, NewStackList).
+
+% nextInstruction(+N, +Program, +StateList, +CallStackList, +State, +Pid,
+% -NewStateList, -NewCallStackList) 
+nextInstruction(N, _, StateList, CallStackList, _, N, StateList,
+    CallStackList).
+nextInstruction(N, Program, StateList, StackList, State, Pid, NewStateList,
+    NewStackList) :-
+    Pid < N,
+    NextPid is Pid + 1,
+    nextInstruction(N, Program, StateList, StackList, State, NextPid, NSList, 
+        NSStack),
+    step(Program, State, Pid, NextState, InstrIdx),
+    nth0(Idx, StateList, State),
+    nth0(Idx, StackList, Stack),
+    append(Stack, [pair(Pid, InstrIdx)], NextStack),
+    allInterlacings(N, Program, NextState, NextStack, NSList, NSStack,
+        NewStateList, NewStackList).
 
 
 
@@ -93,7 +115,7 @@ printListSep([X | XS], S, F) :-
 %   LenInstrs: number of instructions
 %   PCs: [pair(Pid, InstructionNumber)]
 %   Stack: [pair(Key, Value)]
-%             ^ `Id` or an array expression `array(Id, Index)`
+%                 ^ `Id` or an array expression `array(Id, Index)`
 %
 % For instance: 
 %   varaibles([ x ]).
@@ -104,10 +126,19 @@ printListSep([X | XS], S, F) :-
 %   ]).
 % 
 % , for N=1, has the states:
-%   S1 = state(2, [pos(1, 1)], []), H1 = []
-%   S2 = state(2, [pos(1, 2)], [v(x, 1)]) H2 = [S1]
-%   S3 = state(2, [pos(1, 1)], [v(array(arr, 1), 5), v(x, 1)]) H3 = [S2, S1]
+%   S1 = state( 2, [pos(1, 1)]
+%             , [pair(x, 0), pair(array(arr, 0), 0), pair(array(arr, 1), 0)]
+%             ), 
+%     H1 = []
+%   S2 = state(2, [pos(1, 2)], [pair(x, 1), ...]) 
+%     H2 = [S1]
+%   S3 = state( 2, [pos(1, 1)]
+%             , [..., pair(array(arr, 1), 5), pair(x, 1)]
+%             ) 
+%     H3 = [S2, S1]
 % 
+% Where H* is a list of previous states.
+%
 % initState(+Variables, +Arrays, +Program, +N, -StanPoczątkowy)
 initState( variables(VarNames)
          , arrays(ArrayNames)
@@ -146,75 +177,61 @@ findIncides(Xs, V, Ixs) :-
 findIncides([], _, _, []).
 findIncides([X | XS], V, N, LS) :-
   N1 is N + 1,
-  ( X = V -> LS = [N | LS1]
-  ; LS = LS1
+  (  X = V 
+  -> LS = [N | LS1]
+  ;  LS = LS1
   ),
   findIncides(XS, V, N1, LS1).
 
 
 
-% step(+Program, +StanWe, +History   , +CallStack
-%     , ?PrId  , -StanWy, -NewHistory, -NewCallStack
+% step(+Program, +StanWe,
+%     , ?PrId  , -StanWy, -InstrNr
 %     )
 
-step(P, S, H, CS, Pid, S1, H1, CS1) :-
-  arg(2, S, N),
+step(P, S, Pid, S1, I) :-
   var(Pid),
   !,
-  step_gen(0, N, [P, S, H, CS], [S1, H1, CS1]).
-
-% step(_, _, _, _, Pid, )
-
-step(_, S, H, _, _, _, _, _) :-
-  member(S, H),
-  !,
-  fail.
+  arg(2, S, N),
+  step_gen(0, N, Pid, [P, S], [S1, I]).
 
 step( program(Instrs)
     , State
-    , History
-    , CS
     , Pid
     , state(SIx, N, L, NewPCs, NewStack)
-    , [State | History]
-    , [pair(Pid, PidPC) | CS]
+    , PidPC
     ) :-
-  \+ member(State, History),
   State = state(SIx, N, L, PCs, Stack),
   integer(Pid),
   Pid >= 0,
   Pid < N,
   assocLookup(PCs, Pid, 1, PidPC),            % get the current pid PC
-  valSet(Stack, pid, Pid, EvalStack),         % set the pid var
-  nth1(PidPC, Instrs, Instr),                 % get the current instruction
+  nth0(PidPC, Instrs, Instr),                 % get the current instruction
   evalInstr( Instr                            % eval the instruction 
-           , state(SIx, N, L, PCs, EvalStack)
-           , state(SIx, N, L, PCs1, PEStack)
-           ),    
-  assocDelete(PEStack, pid, NewStack),
-  assocLookup(PCs1, Pid, PidPC, PidPC1),      % get the updated pid
-  NewPidPC is PidPC1 + 1,                     % move to the next instruction
-  replaceOrPush(PCs1, Pid, NewPidPC, NewPCs). % update the pid PC 
+           , Pid
+           , state(SIx, N, L, PCs, Stack)
+           , state(SIx, N, L, NewPCs, NewStack)
+           ).    
   
 
-
-step_gen(Pid, N, _, _) :-
+step_gen(Pid, N, _, _, _, _) :-
   (Pid < 0 ; Pid >= N),
   !,
   fail.
 
-step_gen(Pid, N, LArgs, RArgs) :-
+step_gen(Pid, N, Pid, LArgs, RArgs) :-
   Pid >= 0,
   Pid < N,
   append(LArgs, [Pid | RArgs], Args),
   G =.. [step | Args],
+  format('~q', [G]),
   call(G).
 
-step_gen(Pid, N, LArgs, RArgs) :-
-  Pid >= 0,
-  Pid < N,
-  Pid1 is Pid + 1,
-  step_gen(Pid1, N, LArgs, RArgs).
+step_gen(Pid0, N, Pid, LArgs, RArgs) :-
+  Pid0 >= 0,
+  Pid0 < N,
+  Pid1 is Pid0 + 1,
+  step_gen(Pid1, N, Pid, LArgs, RArgs).
 
 
 
@@ -224,6 +241,14 @@ isUnsafe(state(SIx, N, _, PCs, _), IS) :-
   length(IS, L),
   L > 1.
 
+
+
+% isUnsafe( +SectionLines
+%         , +Pid
+%         , +N
+%         , +InstructionCounters
+%         , -PidsInSection
+%         )
 isUnsafe(_, Pid, N, _, []) :-
   (Pid < 0 ; Pid >= N),
   !.
@@ -231,8 +256,9 @@ isUnsafe(_, Pid, N, _, []) :-
 isUnsafe(SIx, Pid, N, PCs, IS) :-
   Pid < N,
   assocLookup(PCs, Pid, 1, PidPC),
-  ( member(PidPC, SIx) -> IS = [Pid | IS1]
-  ; IS = IS1
+  (  member(PidPC, SIx) 
+  -> IS = [Pid | IS1]
+  ;  IS = IS1
   ),
   Pid1 is Pid + 1,
   isUnsafe(SIx, Pid1, N, PCs, IS1).
@@ -241,30 +267,35 @@ isUnsafe(SIx, Pid, N, PCs, IS) :-
 
 % evalInstr(Instr, Stack, NewStack)
 evalInstr( assign(Id, VExpr)
+         , Pid
          , state(SIx, N, L, PCs, Stack)
-         , state(SIx, N, L, PCs, NewStack)
+         , state(SIx, N, L, PCs1, NewStack)
          ) :-
-  valSet(Stack, Id, VExpr, NewStack).
+  valSet(Stack, Pid, Id, VExpr, NewStack),
+  assocLookup(PCs, Pid, 1, PidPC),
+  PidPC1 is PidPC + 1,
+  replaceOrPush(PCs, Pid, PidPC1, PCs1).
 
 evalInstr( goto(M)
+         , Pid
          , state(SIx, N, L, PCs , Stack)
          , state(SIx, N, L, PCs1, Stack)
          ) :-
-  M1 is M - 1,
-  valLookup(Stack, pid, Pid),
-  replaceOrPush(PCs, Pid, M1, PCs1).
+  replaceOrPush(PCs, Pid, M, PCs1).
 
 evalInstr( condGoto(Cond, M)
+         , Pid
          , State
          , NewState
          ) :-
   arg(5, State, Stack),
-  replaceVars(Stack, Cond, Cond1),
-  ( call(Cond1) -> evalInstr(goto(M), State, NewState)
-  ; NewState = State
+  replaceVars(Stack, Pid, Cond, Cond1),
+  (  call(Cond1) 
+  -> evalInstr(goto(M), Pid, State, NewState)
+  ;  NewState = State
   ).
 
-evalInstr(sekcja, State, State).
+evalInstr(sekcja, _, State, State).
 
 
 
@@ -288,27 +319,28 @@ replaceOperators(Expr, Expr).
 
 
 
-% replaceVars(+Stack, +Expr, -Expr)
-replaceVars(S, array(ArrName, IExpr), array(ArrName, IExpr1)) :-
-  nonvar(IExpr),
+% replaceVars(+Stack, +Pid, +Expr, -Expr)
+replaceVars(S, Pid, array(ArrName, IExpr), array(ArrName, IExpr1)) :-
   !,
-  replaceVars(S, IExpr, IExpr1).
+  replaceVars(S, Pid, IExpr, IExpr1).
 
-replaceVars(S, Expr, Expr1) :-
-  nonvar(Expr),
+replaceVars(S, Pid, Expr, Expr1) :-
   Expr =.. [F, AExpr, BExpr],
   !,
-  replaceVars(S, AExpr, AExpr1),
-  replaceVars(S, BExpr, BExpr1),
+  replaceVars(S, Pid, AExpr, AExpr1),
+  replaceVars(S, Pid, BExpr, BExpr1),
   Expr1 =.. [F, AExpr1, BExpr1].
 
-replaceVars(_, Expr, Expr) :-
+replaceVars(_, _, Expr, Expr) :-
   number(Expr),
   !.
 
-replaceVars(S, VarName, VarValue) :-
+replaceVars(_, Pid, pid, Pid) :- !.
+
+replaceVars(S, _, VarName, VarValue) :-
   nonvar(VarName),
   functor(VarName, _, 0),
+  VarName \= pid,
   valLookup(S, VarName, VarValue).
 
 
@@ -320,7 +352,7 @@ valLookup(Stack, array(Id, IExpr), Value) :-
   assocLookup(Stack, array(Id, Index), 0, Value).
 
 valLookup(Stack, Id, Value) :-
-  functor(Id, F, K),              % make the last cut green 
+  functor(Id, F, K),               % make the last cut green 
   F/K \= array/2,
   assocLookup(Stack, Id, 0, Value).
 
@@ -332,33 +364,35 @@ assocLookup([X | _], Key, _, Value) :-
   X =.. [_, Key, Value],
   !.
 assocLookup([X | XS], Key, DefaultValue, Value) :-
-  X =.. [_, OtherKey, _], % make the previous cut green
+  X =.. [_, OtherKey, _],                    % make the previous cut green
   OtherKey \= Key,
   assocLookup(XS, Key, DefaultValue, Value).
 
 
 
-% valSet(+Stack, +Id, +Value, -NewStack)
+% valSet(+Stack, +Pid, +Id, +Value, -NewStack)
 valSet( Stack
+      , Pid
       , array(Id, IExpr)
       , VExpr
       , NewStack
       ) :-
   !,
-  replaceVars(Stack, IExpr, IExpr1),
-  replaceVars(Stack, VExpr, VExpr1),
+  replaceVars(Stack, Pid, IExpr, IExpr1),
+  replaceVars(Stack, Pid, VExpr, VExpr1),
   Index is IExpr1,
   Value is VExpr1,
   replaceOrPush(Stack, array(Id, Index), Value, NewStack).
 
 valSet( Stack
+      , Pid
       , Id
       , VExpr
       , NewStack
       ) :-
-  functor(Id, F, K), % make the cut green
+  functor(Id, F, K),                        % make the cut green
   F/K \= array/2,   
-  replaceVars(Stack, VExpr, VExpr1),
+  replaceVars(Stack, Pid, VExpr, VExpr1),
   Value is VExpr1,
   replaceOrPush(Stack, Id, Value, NewStack).
 
@@ -366,6 +400,7 @@ valSet( Stack
 
 % replaceOrPush(+Assoc, +Id, +Value, -NewStack)
 replaceOrPush([], Id, Value, [pair(Id, Value)]).
+
 replaceOrPush([X | XS], Id, Value, [X1 | XS]) :- 
   X =.. [F, Id, _],
   !,
@@ -376,6 +411,7 @@ replaceOrPush([X | XS], Id, Value, [X | YS]) :-
 
 
 
+% assocDelete(+Assoc, @Key, -Assoc)
 assocDelete([], _, []).
 
 assocDelete([X | XS], K, YS) :-
@@ -395,8 +431,4 @@ map([X|XS], P, [Y|YS]) :-
   map(XS, P, YS).
 
 
-
-dummyStackState(state(3, 10000, [], [], [])).
-dummyProgram(
-  program([sekcja])
-).
+dummyProgram(program([sekcja])).

@@ -1,6 +1,8 @@
+% Zuzanna Surowiec 438730
 :- op(700, xfx, <>).
 :- [library(lists)].
-:- dynamic step/8, evalInstr/3, replaceVars/3.
+
+
 
 % verify(+N, +File)
 
@@ -40,6 +42,7 @@ verify(_, File) :-
 % verify( +Program, +State, +History, +Moves
 %                 , -State, -History, -Moves, -InSection
 %       ) 
+
 verify(_, S, H, CS, S, H, CS, IS) :-
   isUnsafe(S, IS),
   !.
@@ -93,7 +96,7 @@ printListSep([X | XS], S, F) :-
 %   LenInstrs: number of instructions
 %   PCs: [pair(Pid, InstructionNumber)]
 %   Stack: [pair(Key, Value)]
-%             ^ `Id` or an array expression `array(Id, Index)`
+%                 ^ `Id` or an array expression `array(Id, Index)`
 %
 % For instance: 
 %   varaibles([ x ]).
@@ -104,10 +107,19 @@ printListSep([X | XS], S, F) :-
 %   ]).
 % 
 % , for N=1, has the states:
-%   S1 = state(2, [pos(1, 1)], []), H1 = []
-%   S2 = state(2, [pos(1, 2)], [v(x, 1)]) H2 = [S1]
-%   S3 = state(2, [pos(1, 1)], [v(array(arr, 1), 5), v(x, 1)]) H3 = [S2, S1]
+%   S1 = state( 2, [pos(1, 1)]
+%             , [pair(x, 0), pair(array(arr, 0), 0), pair(array(arr, 1), 0)]
+%             ), 
+%     H1 = []
+%   S2 = state(2, [pos(1, 2)], [pair(x, 1), ...]) 
+%     H2 = [S1]
+%   S3 = state( 2, [pos(1, 1)]
+%             , [..., pair(array(arr, 1), 5), pair(x, 1)]
+%             ) 
+%     H3 = [S2, S1]
 % 
+% Where H* is a list of previous states.
+%
 % initState(+Variables, +Arrays, +Program, +N, -StanPoczątkowy)
 initState( variables(VarNames)
          , arrays(ArrayNames)
@@ -146,8 +158,9 @@ findIncides(Xs, V, Ixs) :-
 findIncides([], _, _, []).
 findIncides([X | XS], V, N, LS) :-
   N1 is N + 1,
-  ( X = V -> LS = [N | LS1]
-  ; LS = LS1
+  (  X = V 
+  -> LS = [N | LS1]
+  ;  LS = LS1
   ),
   findIncides(XS, V, N1, LS1).
 
@@ -162,8 +175,6 @@ step(P, S, H, CS, Pid, S1, H1, CS1) :-
   var(Pid),
   !,
   step_gen(0, N, [P, S, H, CS], [S1, H1, CS1]).
-
-% step(_, _, _, _, Pid, )
 
 step(_, S, H, _, _, _, _, _) :-
   member(S, H),
@@ -193,7 +204,7 @@ step( program(Instrs)
            ),    
   assocDelete(PEStack, pid, NewStack),
   assocLookup(PCs1, Pid, PidPC, PidPC1),      % get the updated pid
-  NewPidPC is PidPC1 + 1,                     % move to the next instruction
+  NewPidPC is (PidPC1 mod L) + 1,             % move to the next instruction
   replaceOrPush(PCs1, Pid, NewPidPC, NewPCs). % update the pid PC 
   
 
@@ -224,6 +235,14 @@ isUnsafe(state(SIx, N, _, PCs, _), IS) :-
   length(IS, L),
   L > 1.
 
+
+
+% isUnsafe( +SectionLines
+%         , +Pid
+%         , +N
+%         , +InstructionCounters
+%         , -PidsInSection
+%         )
 isUnsafe(_, Pid, N, _, []) :-
   (Pid < 0 ; Pid >= N),
   !.
@@ -231,8 +250,9 @@ isUnsafe(_, Pid, N, _, []) :-
 isUnsafe(SIx, Pid, N, PCs, IS) :-
   Pid < N,
   assocLookup(PCs, Pid, 1, PidPC),
-  ( member(PidPC, SIx) -> IS = [Pid | IS1]
-  ; IS = IS1
+  (  member(PidPC, SIx) 
+  -> IS = [Pid | IS1]
+  ;  IS = IS1
   ),
   Pid1 is Pid + 1,
   isUnsafe(SIx, Pid1, N, PCs, IS1).
@@ -260,8 +280,9 @@ evalInstr( condGoto(Cond, M)
          ) :-
   arg(5, State, Stack),
   replaceVars(Stack, Cond, Cond1),
-  ( call(Cond1) -> evalInstr(goto(M), State, NewState)
-  ; NewState = State
+  (  call(Cond1) 
+  -> evalInstr(goto(M), State, NewState)
+  ;  NewState = State
   ).
 
 evalInstr(sekcja, State, State).
@@ -320,7 +341,7 @@ valLookup(Stack, array(Id, IExpr), Value) :-
   assocLookup(Stack, array(Id, Index), 0, Value).
 
 valLookup(Stack, Id, Value) :-
-  functor(Id, F, K),              % make the last cut green 
+  functor(Id, F, K),               % make the last cut green 
   F/K \= array/2,
   assocLookup(Stack, Id, 0, Value).
 
@@ -332,7 +353,7 @@ assocLookup([X | _], Key, _, Value) :-
   X =.. [_, Key, Value],
   !.
 assocLookup([X | XS], Key, DefaultValue, Value) :-
-  X =.. [_, OtherKey, _], % make the previous cut green
+  X =.. [_, OtherKey, _],                    % make the previous cut green
   OtherKey \= Key,
   assocLookup(XS, Key, DefaultValue, Value).
 
@@ -356,7 +377,7 @@ valSet( Stack
       , VExpr
       , NewStack
       ) :-
-  functor(Id, F, K), % make the cut green
+  functor(Id, F, K),                        % make the cut green
   F/K \= array/2,   
   replaceVars(Stack, VExpr, VExpr1),
   Value is VExpr1,
@@ -366,6 +387,7 @@ valSet( Stack
 
 % replaceOrPush(+Assoc, +Id, +Value, -NewStack)
 replaceOrPush([], Id, Value, [pair(Id, Value)]).
+
 replaceOrPush([X | XS], Id, Value, [X1 | XS]) :- 
   X =.. [F, Id, _],
   !,
@@ -376,6 +398,7 @@ replaceOrPush([X | XS], Id, Value, [X | YS]) :-
 
 
 
+% assocDelete(+Assoc, @Key, -Assoc)
 assocDelete([], _, []).
 
 assocDelete([X | XS], K, YS) :-
@@ -393,10 +416,3 @@ map([], _, []).
 map([X|XS], P, [Y|YS]) :-
   call(P, X, Y),
   map(XS, P, YS).
-
-
-
-dummyStackState(state(3, 10000, [], [], [])).
-dummyProgram(
-  program([sekcja])
-).
