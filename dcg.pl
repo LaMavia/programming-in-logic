@@ -25,7 +25,8 @@ var_prefix("V").
 rt_file(Path) :-
   open(Path, read, S),
   read_file(S, Lines),
-  phrase(rt, Lines).
+  append(Lines, Content),
+  phrase(rt, Content).
 
 
 
@@ -35,7 +36,8 @@ read_file(Stream, []) :-
 
 read_file(Stream, [X|L]) :-
     \+ at_end_of_stream(Stream),
-    read(Stream, X),
+    read_line_to_codes(Stream, X0),
+    append(X0, "\n", X),
     read_file(Stream, L).
 
 rt -->
@@ -97,7 +99,8 @@ p(Io, Ic, U, R, In) -->
   token(","),
   !,
   fragment(Ic, X, Ic1),
-  { U1 = [X, ",\n  " | U] },
+  { U1 = [X, ",\n  " | U]
+  },
   p(Io, Ic1, U1, R, In).
 
 p(Io, Ic, U, R, In) -->
@@ -148,7 +151,11 @@ fragment(In, "true", In) -->
   !.
 
 fragment(In, R, Out) -->
-  token(inside("[", "]", Elems)),
+  token("["),
+  !,
+  lst_elems(Elems),
+  { Elems \= [] },
+  token("]"),
   !,
   { genvar(Out) },
   { append([In, " = ", "[", Elems, " | ", Out, "]"], R) }.
@@ -174,7 +181,7 @@ fragment(In, R, Out) -->
   { append(["phrase(\"", Elems, "\", ", In, ", ", Out, ")"], R) }.
 
 fragment(In, R, In) -->
-  token(inside("{", "}", R)),
+  token(inside(token("{"), token("}"), R)),
   !.
 
 fragment(In, R, Out) -->
@@ -188,13 +195,108 @@ fragment(In, R, Out) -->
   predicate_name(Name),
   !,
   { genvar(Out) },
-  (  inside(token("("), token(")"), Args),
-     { Args \= [] }
-  -> { append([Name, "(", Args, ", ", In, ", ", Out, ")"], R) } 
-  ;  optional(empty_call),
-     { append([Name, "(", In, ", ", Out, ")"], R) }
+  (   token("("),
+      args(Args),
+      token(")"),
+      { Args \= [] }
+  ->  { append([Name, "(", Args, ", ", In, ", ", Out, ")"], R) }
+  ;   optional(empty_call),
+      { append([Name, "(", In, ", ", Out, ")"], R) }
   ).
 
+
+
+nat(N) --> 
+  many(digit, N).
+
+
+
+num(N) -->
+  (  "-" 
+  -> nat(N0), 
+     { N = [0'- | N0] } 
+  ;  optional("+"), 
+     nat(N)
+  ).
+
+
+
+str(S) -->
+  spaces,
+  "\"",
+  str("\"", U),
+  spaces,
+  { reverse(U, S) }.
+
+
+str(U, S) -->
+  "\\",
+  !,
+  [C],
+  { U1 = [C, 0'\\ | U] },
+  str(U1, S).
+
+str(S, [0'" | S]) -->
+  "\"",
+  !.
+
+str(U, S) -->
+  [C],
+  { \+ member(C, "\\\"") },
+  { U1 = [C | U] },
+  str(U1, S).
+
+
+
+lst(R) -->
+  token("["),
+  lst_elems(Elems),
+  token("]"),
+  { append(["[", Elems, "]"], R) }.
+
+
+lst_elems(Elems) -->
+  sep_by(
+    trm,
+    one_of([
+      parse_rep(token(","), ","),
+      parse_rep(token("|"), "|")
+    ]),
+    Elems
+  ).
+
+
+predicate_call(R) -->
+  predicate_name(N),
+  args(Args),
+  { append(N, Args, R) }.
+
+
+tuple(R) -->
+  token("("),
+  args(Xs),
+  token(")"),
+  { append(["(", Xs, ")"], R) }.
+
+
+
+args(Xs) -->
+  sep_by(
+    trm,
+    parse_rep(token(","), ","),
+    Xs
+  ).
+
+trm(X) --> 
+  one_of([
+    num, 
+    str, 
+    predicate_call, 
+    predicate_name, 
+    lst, 
+    tuple, 
+    var_name
+  ], X).
 
 
 % predicate_name(?Name)
@@ -296,6 +398,12 @@ some(_, []) --> [].
 
 
 
+many(G, [Y | YS]) -->
+  call(G, Y),
+  some(G, YS).
+
+
+
 % optional(:G//0)
 optional(G) --> G, !.
 optional(_) --> [].
@@ -309,7 +417,6 @@ inside(L, R, Inside) -->
 % inside(+L, +R, +Acc, -Inside)
 inside(_, R, U, Inside) -->
   R,
-  !,
   {reverse(U, Inside)}.
 
 inside(L, R, U, Inside) -->
@@ -321,6 +428,7 @@ inside(L, R, U, Inside) -->
     U1 = [C | U] 
   },
   inside(L, R, U1, Inside).
+
 
 
 % fragment(-In, -Out, -Parsed) 
@@ -338,16 +446,32 @@ spaces --> [C], { member(C, [9, 10, 11, 12, 13, 32]) }, !, spaces.
 spaces --> [].
 
 
-spaces2(SVar0, SVar1) :- 
-  SVar0 = [C | SVar2],
-   member(C, [9, 10, 11, 12, 13, 32]) ,
-  !,
-  spaces2(SVar2, SVar3),
-  SVar3 = SVar1.
 
-spaces2(SVar0, SVar1) :- 
-  true,
-  SVar0 = SVar1.
+% sep_by(:E//1, :S//1, ?Seq)
+%
+% Accepts a sequence of elements accepted by E,
+% separated by elements accepted by S.
+% Returns a string representing the sequence. 
+%
+sep_by(E, S, YS) -->
+  call(E, Y),
+  !,
+  sep_by(E, S, [Y], YS).
+
+sep_by(_, _, []) --> [].
+
+sep_by(E, S, U, YS) -->
+  token(call(S, Sep)),
+  !,
+  call(E, Y),
+  { U1 = [Y, Sep | U] },
+  sep_by(E, S, U1, YS).
+
+sep_by(_, _, U, YS) -->
+  {
+    reverse(U, UR),
+    append(UR, YS)
+  }.
 
 
 % genvar(-Symbol)
@@ -360,8 +484,8 @@ genvar(S) :-
 
 
 
-% genclean
-% 
+parse_rep(G, Y, Y) -->
+  G.
 
 
 
