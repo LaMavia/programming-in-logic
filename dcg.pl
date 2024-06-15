@@ -20,30 +20,65 @@
 %   ).
 %
 
-transform((Head :- Body)) -->
+var_prefix("V").
+
+rt_file(Path) :-
+  open(Path, read, S),
+  read_file(S, Lines),
+  phrase(rt, Lines).
+
+
+
+read_file(Stream, []) :-
+    at_end_of_stream(Stream),
+    !.
+
+read_file(Stream, [X|L]) :-
+    \+ at_end_of_stream(Stream),
+    read(Stream, X),
+    read_file(Stream, L).
+
+rt -->
+  transform(R),
+  !,
+  { format("~s\n\n", [R]) },
+  rt.
+
+rt --> 
+  [].
+
+
+transform(R) -->
   { % initialise the first variables
-    set_flag(iota, 0),
-    gensym("$S", In),
-    gensym("$S", Out)
+    var_prefix(V),
+    set_flag(V, 0),
+    genvar(In)
   },
   token(fragment(In, Head, Out)),
-  token(transform_seq_rest(Out, X, RetBody)),
+  (  token(p_head(Out, Out, [], RetBody, X1))
+  -> { RetSuffix = [ ",\n  ", X2, " = ", Out, ",\n  ", X1, " = ", X2, ",\n  ", RetBody, "." ] }
+  ;  { RetSuffix = [ ",\n  ", X2, " = ", Out, "." ] }
+  ),
   token("-->"),
-  token(transform_seq(In, X, RuleBody)),
-  {     
-    set_flag(iota, 0) 
+  token(p(In, URuleBody, X2)),
+  { % combine the rule body, and the return statements
+    append(URuleBody, RuleBody),
+    append([ Head, " :- \n  ", RuleBody ], RetSuffix, ClauseParts),
+    append(ClauseParts, R) 
+  },
+  { % cleanup     
+    set_flag(V, 0)
   }.
 
 
-% @spec p :: String
-% p(-Repr)
-%
-% p(R) -->
-%   { 
-%     genvar(In)
-%   },
-%   token(fragment(In, Head, Out)),
-%
+
+p_head(Io, Ic, U, R, In) -->
+  token(","),
+  !,
+  fragment(Ic, X, Ic1),
+  { U1 = [X, ",\n  " | U] },
+  p_head(Io, Ic1, U1, R, In).
+
 
 
 % @spec p(+String, -[String], ?String)
@@ -52,6 +87,7 @@ transform((Head :- Body)) -->
 p(In, R, Out) -->
   fragment(In, F, Ic),
   p(In, Ic, [F], R, Out).
+
 
 
 % @spec p(+String, +String, +[String], -[String], -String) 
@@ -86,13 +122,15 @@ p(Io, Ic, U, R, In) -->
 p(_, Ic, U, R, Ic) -->
   token("."),
   !,
-  { 
-    U1 = ["." | U],
-    reverse(U1, R)
-  }.
+  { reverse(U, R) }.
 
 p(_, Ic, U, R, Ic), ")" -->
   token(")"),
+  !,
+  { reverse(U, R) }.
+
+p(_, Ic, U, R, Ic), "-->" -->
+  token("-->"),
   !,
   { reverse(U, R) }.
 
@@ -100,6 +138,10 @@ p(_, Ic, U, R, Ic), ")" -->
 % @spec fragment :: String -> String -> String
 % fragment(+In, -Repr, -Out)
 %
+fragment(In, "!", In) -->
+  token("!"),
+  !.
+
 fragment(In, "true", In) -->
   token("["),
   token("]"),
@@ -129,7 +171,7 @@ fragment(In, R, Out) -->
   token(inside("\"", "\"", Elems)),
   !,
   { genvar(Out) },
-  { append(["phrase(\"", Elems, "\", ", Out, ", ", In, ")"], R) }.
+  { append(["phrase(\"", Elems, "\", ", In, ", ", Out, ")"], R) }.
 
 fragment(In, R, In) -->
   token(inside("{", "}", R)),
@@ -141,6 +183,39 @@ fragment(In, R, Out) -->
   { genvar(Out) },
   { append(["phrase(", V, ", ", In, ", ", Out, ")"], R) }.
 
+fragment(In, R, Out) -->
+  spaces,
+  predicate_name(Name),
+  !,
+  { genvar(Out) },
+  (  inside(token("("), token(")"), Args),
+     { Args \= [] }
+  -> { append([Name, "(", Args, ", ", In, ", ", Out, ")"], R) } 
+  ;  optional(empty_call),
+     { append([Name, "(", In, ", ", Out, ")"], R) }
+  ).
+
+
+
+% predicate_name(?Name)
+predicate_name([X|XS]) -->
+  lowercase(X),
+  !,
+  some(one_of([letter, digit, underscore]), XS).
+
+predicate_name(R) -->
+  inside("'", "'", X),
+  { append(["'", X, "'"], R) }.
+  
+  
+% empty_call//0
+%
+% Accepts an empty call ::= '(' ')'.
+%
+empty_call -->
+  token("("),
+  token(")").
+
 
 
 % var_name(?Name)
@@ -149,7 +224,7 @@ fragment(In, R, Out) -->
 % V ::= ('_' + Uppercase) (Letter + Digit + '_')*
 var_name([X|XS]) -->
   one_of([ uppercase, underscore ], X),
-  some(one_of([letter, digit]), XS).
+  some(one_of([letter, digit, underscore]), XS).
 
 
 
@@ -220,6 +295,12 @@ some(G, [Y | YS]) -->
 some(_, []) --> [].
 
 
+
+% optional(:G//0)
+optional(G) --> G, !.
+optional(_) --> [].
+
+
 % inside(+L, +R, -Inside)
 inside(L, R, Inside) -->
   L,
@@ -257,13 +338,30 @@ spaces --> [C], { member(C, [9, 10, 11, 12, 13, 32]) }, !, spaces.
 spaces --> [].
 
 
+spaces2(SVar0, SVar1) :- 
+  SVar0 = [C | SVar2],
+   member(C, [9, 10, 11, 12, 13, 32]) ,
+  !,
+  spaces2(SVar2, SVar3),
+  SVar3 = SVar1.
+
+spaces2(SVar0, SVar1) :- 
+  true,
+  SVar0 = SVar1.
+
 
 % genvar(-Symbol)
 %
 % Generates a string representing a fresh
 % stream variable starting with "$S".
 genvar(S) :-
-  gensym("'$VAR'", S).
+  var_prefix(V),
+  gensym(V, S).
+
+
+
+% genclean
+% 
 
 
 
@@ -277,4 +375,6 @@ gensym(Id, Sym) :-
   NewVal is OldVal + 1,
   set_flag(Id, NewVal),
   atom_codes(OldVal, OldValStr),
-  append([Id, "(", OldValStr, ")"], Sym).
+  append(Id, OldValStr, Sym).
+  % append([Id, "(", OldValStr, ")"], Sym).
+
