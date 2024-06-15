@@ -127,6 +127,80 @@ fragment(In, R, Out) -->
 
 
 
+
+var_name([X|XS]) -->
+  one_of([ uppercase, underscore ], X),
+  some(one_of([letter, digit]), XS).
+
+
+
+% underscore(?Y)
+% 
+% Accepts a single underscore.
+%
+underscore(C) --> 
+  [C],
+  { C = 0'_ }.
+
+
+
+% uppercase(?R)
+% 
+% Accepts a single uppercase character.
+%
+uppercase(R) -->
+  [R],
+  { R >= 0'A, R =< 0'Z }.
+
+
+
+% lowercase(?R)
+%
+% Accepts a single lowercase character.
+%
+lowercase(R) -->
+  [R],
+  { R >= 0'a, R =< 0'z }.
+
+
+
+% letter(?R)
+% 
+% Accepts one letter.
+letter(R) -->
+  uppercase(R); lowercase(R).
+
+
+
+% digit(?R)
+%
+% Accepts a single digit.
+digit(R) -->
+  [R],
+  { R >= 0'0, R =< 0'9 }.
+
+
+% one_of(+[:G//1], ?Y)
+one_of(Gs, Y) -->
+  { member(G, Gs) },
+  call(G, Y),
+  !.
+
+
+
+
+% some(:G//1, -U)
+%
+% Accepts 0 or more successes of G,
+% and accumulates them in U.
+some(G, [Y | YS]) -->
+  call(G, Y),
+  !,
+  some(G, YS).
+
+some(_, []) --> [].
+
+
 % inside(+L, +R, -Inside)
 inside(L, R, Inside) -->
   L,
