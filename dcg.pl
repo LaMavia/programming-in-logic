@@ -64,7 +64,6 @@ p(Io, Ic, U, R, In) -->
   { U1 = [X, ",\n  " | U] },
   p(Io, Ic1, U1, R, In).
 
-
 p(Io, Ic, U, R, In) -->
   token(";"),
   !,
@@ -77,14 +76,12 @@ p(Io, Ic, U, R, In) -->
     append([Ic, " = ", In], US)
   }.
 
-
 p(Io, Ic, U, R, In) -->
   token("->"),
   !,
   fragment(Ic, X, Ic1),
   { U1 = [X, "\n->" | U] },
   p(Io, Ic1, U1, R, In).
-
 
 p(_, Ic, U, R, Ic) -->
   token("."),
@@ -93,7 +90,6 @@ p(_, Ic, U, R, Ic) -->
     U1 = ["." | U],
     reverse(U1, R)
   }.
-
 
 p(_, Ic, U, R, Ic), ")" -->
   token(")"),
@@ -111,8 +107,8 @@ fragment(In, "true", In) -->
 
 fragment(In, R, Out) -->
   token(inside("[", "]", Elems)),
-  { genvar(Out) },
   !,
+  { genvar(Out) },
   { append([In, " = ", "[", Elems, " | ", Out, "]"], R) }.
 
 fragment(In, R, Out) -->
@@ -125,6 +121,19 @@ fragment(In, R, Out) -->
     append([ "( ", UR, "\n)" ], R) 
   }.
 
+fragment(In, "true", In) -->
+  token("\"\""),
+  !.
+
+fragment(In, R, Out) -->
+  token(inside("\"", "\"", Elems)),
+  !,
+  { genvar(Out) },
+  { append(["phrase(\"", Elems, "\", ", Out, ", ", In, ")"], R) }.
+
+fragment(In, R, In) -->
+  token(inside("{", "}", R)),
+  !.
 
 
 
