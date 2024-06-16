@@ -2,6 +2,17 @@
 %
 % Uproszczenia:
 % 1. Reguły nie zawierają zmiennych postaci `V{liczba naturalna}`, np. V0, V1 itd. 
+%
+% Założenia, które uznaję za sensowne w kontekście zadania:
+% 1. { ... } nie zawiera znaku '}', gdyż wymagałoby to napisania kolejnego parsera,
+%    parsera prologu. Uznaję to za sensowne, ponieważ gdyby było to wymagane,
+%    zadaniem mogłoby sparsowanie tekstu do klauzuli prologowej, nie tekstu.
+%
+% Komentarz: do wielu predykatów dodałam `@spec ...` 
+% służący do sugerowania typów (inspirowany językiem elixir).
+% Pomogło mi to nie zgubić się w tym, jak traktować wartości
+% "zwracane" przez `p//5`, `fragment//3` itp.
+%
 
 :- [library(lists)].
 :- set_prolog_flag(double_quotes, codes).
