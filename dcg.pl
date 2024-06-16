@@ -1,4 +1,7 @@
 % Zuzanna Surowiec, 438730
+%
+% Uproszczenia:
+% 1. Reguły nie zawierają zmiennych postaci `V{liczba naturalna}`, np. V0, V1 itd. 
 
 :- [library(lists)].
 :- set_prolog_flag(double_quotes, codes).
