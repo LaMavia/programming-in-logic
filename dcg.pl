@@ -12,7 +12,8 @@
 % służący do sugerowania typów (inspirowany językiem elixir).
 % Pomogło mi to nie zgubić się w tym, jak traktować wartości
 % "zwracane" przez `p//5`, `fragment//3` itp.
-%
+% W klasycznej, prologowej sygnaturze zdecydowałam się na bardziej
+% opisowe nazwy argumentów zamiast typów.
 
 :- [library(lists)].
 :- set_prolog_flag(double_quotes, codes).
