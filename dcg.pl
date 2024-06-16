@@ -43,7 +43,7 @@ rt -->
 transform(R) -->
   { % initialise the first variables
     var_prefix(V),
-    set_flag(V, 0),
+    my_set_flag(V, 0),
     genvar(In)
   },
   token(fragment(In, Head, Out)),
@@ -71,7 +71,7 @@ transform(R) -->
     append(ClauseParts, R) 
   },
   { % cleanup     
-    set_flag(V, 0)
+    my_set_flag(V, 0)
   }.
 
 
@@ -228,7 +228,7 @@ fragment(In, R, Out) -->
 % Allows for leading zeros.
 %
 nat(N) --> 
-  many(digit, N).
+  my_many(digit, N).
 
 
 
@@ -376,7 +376,7 @@ trm(X) -->
 predicate_name([X|XS]) -->
   lowercase(X),
   !,
-  some(one_of([letter, digit, underscore]), XS).
+  my_some(one_of([letter, digit, underscore]), XS).
 
 predicate_name(R) -->
   inside("'", "'", X),
@@ -399,7 +399,7 @@ empty_call -->
 % V ::= ('_' + Uppercase) (Letter + Digit + '_')*
 var_name([X|XS]) -->
   one_of([ uppercase, underscore ], X),
-  some(one_of([letter, digit, underscore]), XS).
+  my_some(one_of([letter, digit, underscore]), XS).
 
 
 
@@ -462,28 +462,28 @@ one_of(Gs, Y) -->
 
 
 
-% some(:G//1, -U)
+% my_some(:G//1, -U)
 %
 % Accepts 0 or more successes of G,
 % and accumulates them in U.
 %
-some(G, [Y | YS]) -->
+my_some(G, [Y | YS]) -->
   call(G, Y),
   !,
-  some(G, YS).
+  my_some(G, YS).
 
-some(_, []) --> [].
+my_some(_, []) --> [].
 
 
 
-% many(:G//1, ?U)
+% my_many(:G//1, ?U)
 %
 % Accepts 1 or more successes of G,
 % and accumulates them in U.
 %
-many(G, [Y | YS]) -->
+my_many(G, [Y | YS]) -->
   call(G, Y),
-  some(G, YS).
+  my_some(G, YS).
 
 
 
@@ -602,10 +602,10 @@ parse_rep(G, Y, Y) -->
 %
 gensym(Id, Sym) :-
   nonvar(Id),
-  get_flag(Id, OldVal),
+  my_get_flag(Id, OldVal),
   NewVal is OldVal + 1,
-  set_flag(Id, NewVal),
-  atom_codes(OldVal, OldValStr),
+  my_set_flag(Id, NewVal),
+  number_codes(OldVal, OldValStr),
   append(Id, OldValStr, Sym).
 
 
@@ -625,7 +625,22 @@ read_file(Stream, []) :-
 
 read_file(Stream, [X|L]) :-
     \+ at_end_of_stream(Stream),
-    read_line_to_codes(Stream, X0),
+    read_line(Stream, X0),
     append(X0, "\n", X),
     read_file(Stream, L).
+
+
+  
+% my_get_flag(+Name, -Value)
+my_get_flag(Id, Val) :-
+  ( gs(Id, Val) -> true
+  ; Val = 0
+  ).
+
+
+
+% my_set_flag(+Name, +Value)
+my_set_flag(Id, Val) :-
+  retractall(gs(Id, _)),
+  asserta(gs(Id, Val)).
 
