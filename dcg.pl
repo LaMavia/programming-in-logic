@@ -106,8 +106,8 @@ p(In, R, Out) -->
 
 
 
-% @spec p(+String, +String, +[String], -[String], -String) 
-% p(+InOriginal, +InCurrent, +Accumulator, -Repr, -InNew)
+% @spec p(+String, +String, +[String], -[String], ?String) 
+% p(+InOriginal, +InCurrent, +Accumulator, -Repr, ?InNew)
 %
 % Accepts the rest of a list of instructions of a DCG rule.
 % 
@@ -116,10 +116,20 @@ p(_, Ic, U, R, Ic) -->
   !,
   { reverse(U, R) }.
 
-p(_, Ic, U, R, Ic), ")" -->
+
+
+p(Io, Ic, U, R, In), ")" -->
   token(")"),
   !,
-  { reverse(U, R) }.
+  { ground(In) },
+  {
+    (   Io = Ic
+    ->  U1 = U
+    ;   U1 = [ Io, " = ", Ic, ",\n  " | U ]
+    ),
+    U2 = [ Ic, " = ", In, ",\n  " | U1 ]
+  },
+  { reverse(U2, R) }.
 
 p(Io, Ic, U, R, In) -->
   token(","),
@@ -179,11 +189,12 @@ fragment(In, R, Out) -->
 fragment(In, R, Out) -->
   token("("),
   !,
+  { genvar(Out) },
   p(In, U, Out),
   token(")"),
   { 
     append(U, UR),
-    append([ "( ", UR, "\n)" ], R) 
+    append([ "(\n  ", UR, "\n)" ], R) 
   }.
 
 fragment(In, "true", In) -->
@@ -626,7 +637,7 @@ read_file(Stream, []) :-
 
 read_file(Stream, [X|L]) :-
     \+ at_end_of_stream(Stream),
-    read_line(Stream, X0),
+    read_line_to_codes(Stream, X0),
     append(X0, "\n", X),
     read_file(Stream, L).
 
