@@ -150,7 +150,7 @@ p(Io, Ic, U, R, In) -->
 
 
 
-% @spec fragment :: String -> String -> String
+% @spec fragment(+String, -String, -String)
 % fragment(+In, -Repr, -Out)
 %
 % Accepts instructions of a DCG rule.
