@@ -494,6 +494,7 @@ optional(G) --> G, !.
 optional(_) --> [].
 
 
+
 % inside(+L, +R, -Inside)
 %
 % Accepts the shortest substring between L and R.
