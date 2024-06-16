@@ -36,6 +36,8 @@ rt -->
   [].
 
 
+
+% @spec transform(-String)
 % transform(-Repr)
 %
 % Transforms a DCG rule (in text) to the text representation of its clause.
@@ -232,6 +234,7 @@ fragment(In, R, Out) -->
 
 
 
+% @spec num(-String)
 % nat(-N)
 %
 % Accepts a natural, decimal number.
@@ -242,6 +245,7 @@ nat(N) -->
 
 
 
+% @spec num(-String)
 % num(-N)
 %
 % Accepts a decimal integer.
@@ -259,6 +263,7 @@ num(N) -->
 
 
 
+% @spec str(-String)
 % str(-S)
 %
 % Accepts a string while 
@@ -272,6 +277,8 @@ str(S) -->
   { reverse(U, S) }.
 
 
+
+% @spec str(+String, -String)
 % str(+U, -S)
 %
 % A helper of str//1.
@@ -295,6 +302,7 @@ str(U, S) -->
 
 
 
+% @spec lst(-String)
 % lst(-R)
 %
 % Accepts a list of elements.
@@ -307,6 +315,7 @@ lst(R) -->
 
 
 
+% @spec lst_elems(-String)
 % lst_elems(-Elems)
 %
 % Accepts the elements of a list.
@@ -324,7 +333,8 @@ lst_elems(Elems) -->
 
 
 
-% predicate_call(-R)
+% @spec predicate_call(?String)
+% predicate_call(?R)
 %
 % Accepts a predicate call or a functor.
 %
@@ -335,6 +345,7 @@ predicate_call(R) -->
 
 
 
+% @spec tuple(?String)
 % tuple(?R)
 %
 % Accepts a comma-separated list.
@@ -347,6 +358,7 @@ tuple(R) -->
 
 
 
+% @spec args(?String)
 % args(?Xs)
 %
 % Accepts the elements of a list of arguments 
@@ -361,6 +373,7 @@ args(Xs) -->
 
 
 
+% @spec trm(?String)
 % trm(?X)
 % 
 % Accepts an expression term 
@@ -368,6 +381,7 @@ args(Xs) -->
 % 
 trm(X) --> 
   one_of([
+    ascii_code,
     num, 
     str, 
     predicate_call, 
@@ -376,6 +390,24 @@ trm(X) -->
     tuple, 
     var_name
   ], X).
+
+
+
+% ascii_code(?String)
+% ascii_code(?CodeExpr)
+%
+% Accepts an ascii code expression: 0'X | 0'\X.
+% Captures the whole expression.
+%
+ascii_code([0'0, 0'' | R]) -->
+  "0'",
+  !,
+  (   [0'\\, C]
+  ->  { R = [0'\\, C] }
+  ;   [C]
+  ->  { R = [C] }
+  ).
+
 
 
 % predicate_name(?Name)
@@ -392,6 +424,7 @@ predicate_name(R) -->
   inside("'", "'", X),
   { append(["'", X, "'"], R) }.
   
+
   
 % empty_call//0
 %
@@ -403,6 +436,7 @@ empty_call -->
 
 
 
+% var_name(?String)
 % var_name(?Name)
 %
 % Accepts variables in the form of:
@@ -413,6 +447,7 @@ var_name([X|XS]) -->
 
 
 
+% @spec underscore(?Char)
 % underscore(?Y)
 % 
 % Accepts a single underscore.
@@ -423,6 +458,7 @@ underscore(C) -->
 
 
 
+% @spec uppercase(?Char)
 % uppercase(?R)
 % 
 % Accepts a single uppercase character.
@@ -433,6 +469,7 @@ uppercase(R) -->
 
 
 
+% @spec lowercase(?Char)
 % lowercase(?R)
 %
 % Accepts a single lowercase character.
@@ -443,6 +480,7 @@ lowercase(R) -->
 
 
 
+% @spec letter(?Char)
 % letter(?R)
 % 
 % Accepts one letter.
@@ -452,6 +490,7 @@ letter(R) -->
 
 
 
+% @spec digit(?Char)
 % digit(?R)
 %
 % Accepts a single digit.
@@ -461,6 +500,7 @@ digit(R) -->
   { R >= 0'0, R =< 0'9 }.
 
 
+
 % one_of(+[:G//1], ?Y)
 %
 % Accepts one of the given predicates,
@@ -468,7 +508,6 @@ digit(R) -->
 one_of(Gs, Y) -->
   { member(G, Gs) },
   call(G, Y).
-
 
 
 
