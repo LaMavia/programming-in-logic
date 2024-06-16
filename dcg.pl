@@ -110,6 +110,7 @@ p(In, R, Out) -->
 % p(+InOriginal, +InCurrent, +Accumulator, -Repr, ?InNew)
 %
 % Accepts the rest of a list of instructions of a DCG rule.
+% `InNew` is ground iff it's in a subsequence - in parentheses.
 % 
 p(_, Ic, U, R, Ic) -->
   token("."),
@@ -118,18 +119,16 @@ p(_, Ic, U, R, Ic) -->
 
 
 
-p(Io, Ic, U, R, In), ")" -->
+p(_, Ic, U, R, In), ")" -->
   token(")"),
   !,
-  { ground(In) },
-  {
-    (   Io = Ic
-    ->  U1 = U
-    ;   U1 = [ Io, " = ", Ic, ",\n  " | U ]
-    ),
-    U2 = [ Ic, " = ", In, ",\n  " | U1 ]
+  { % Assert that we are in a subsequence 
+    ground(In) 
   },
-  { reverse(U2, R) }.
+  { % Since `Ic` =/= `In`, they need to be unified at the end
+    U1 = [ Ic, " = ", In, ",\n  " | U ],
+    reverse(U1, R) 
+  }.
 
 p(Io, Ic, U, R, In) -->
   token(","),
@@ -194,7 +193,7 @@ fragment(In, R, Out) -->
   token(")"),
   { 
     append(U, UR),
-    append([ "(\n  ", UR, "\n)" ], R) 
+    append([ "(\n  ", UR, "\n  )" ], R) 
   }.
 
 fragment(In, "true", In) -->

@@ -1,34 +1,25 @@
-transform(R) -->
+p(_, Ic, U, R, Ic) -->
+  token("."),
+  !,
+  { reverse(U, R) }.
+
+
+
+p(_, Ic, U, R, In), ")" -->
+  token(")"),
+  !,
+  { ground(In) },
   {
-    var_prefix(V),
-    my_set_flag(V, 0),
-    genvar(In)
-  },
-  token(fragment(In, Head, Out)),
-  (   token(p_head(Out, Out, [], URetBody, X1)),
-      { append(URetBody, RetBody) }
-  ->  { 
-        RetPrefix = [ X1, " = ", X2, ",\n  " ],
-        RetSuffix = [ RetBody, "." ] 
-      }
-  ;   { 
-        RetPrefix = [ X2, " = ", Out, ",\n  " ],
-        RetSuffix = [ "." ] 
-      }
-  ),
-  token("-->"),
-  token(p(In, URuleBody, X2)),
-  { 
-    append(URuleBody, RuleBody),
-    append([
-      [ Head, " :- \n  " ],
-      RetPrefix,
-      [ RuleBody ], 
-      RetSuffix
-    ], ClauseParts),
-    append(ClauseParts, R) 
-  },
-  {    
-    my_set_flag(V, 0)
+    U1 = [ Ic, " = ", In, ",\n  " | U ],
+    reverse(U1, R) 
   }.
+
+p(Io, Ic, U, R, In) -->
+  token(","),
+  !,
+  fragment(Ic, X, Ic1),
+  { U1 = [X, ",\n  " | U]
+  },
+  p(Io, Ic1, U1, R, In).
+
 
