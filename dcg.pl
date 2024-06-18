@@ -2,6 +2,7 @@
 %
 % Uproszczenia:
 % 1. Reguły nie zawierają zmiennych postaci `V{liczba naturalna}`, np. V0, V1 itd. 
+% 2. Operatory wyłącznie w postaci kanonicznej.
 %
 % Założenia, które uznaję za sensowne w kontekście zadania:
 % 1. { ... } nie zawiera znaku '}', gdyż wymagałoby to napisania kolejnego parsera,
@@ -13,7 +14,7 @@
 % Pomogło mi to nie zgubić się w tym, jak traktować wartości
 % "zwracane" przez `p//5`, `fragment//3` itp.
 % W klasycznej, prologowej sygnaturze zdecydowałam się na bardziej
-% opisowe nazwy argumentów zamiast typów.
+% opisowe nazwy argumentów zamiast "typów".
 
 :- [library(lists)].
 :- set_prolog_flag(double_quotes, codes).
@@ -28,6 +29,7 @@
 rt_file(Path) :-
   open(Path, read, S),
   read_file(S, Lines),
+  !,
   append(Lines, Content),
   phrase(rt, Content).
 
@@ -337,8 +339,8 @@ lst_elems(Elems) -->
   sep_by(
     trm,
     one_of([
-      parse_rep(token(","), ","),
-      parse_rep(token("|"), "|")
+      parse_rep(token(","), ", "),
+      parse_rep(token("|"), " | ")
     ]),
     Elems
   ).
@@ -379,7 +381,7 @@ tuple(R) -->
 args(Xs) -->
   sep_by(
     trm,
-    parse_rep(token(","), ","),
+    parse_rep(token(","), ", "),
     Xs
   ).
 
@@ -411,7 +413,7 @@ trm(X) -->
 % Accepts an ascii code expression: 0'X | 0'\X.
 % Captures the whole expression.
 %
-ascii_code([0'0, 0'' | R]) -->
+ascii_code([0'0, 0'\' | R]) -->
   "0'",
   !,
   (   [0'\\, C]
@@ -419,6 +421,17 @@ ascii_code([0'0, 0'' | R]) -->
   ;   [C]
   ->  { R = [C] }
   ).
+
+
+
+% @spec special(?Char)
+% special(?Char)
+%
+% Accepts special characters. 
+%
+special(C) -->
+  [C],
+  { member(C, "+-*/:-><?|;@=\\^.$,") }.
 
 
 
@@ -431,6 +444,10 @@ predicate_name([X|XS]) -->
   lowercase(X),
   !,
   my_some(one_of([letter, digit, underscore]), XS).
+
+predicate_name(XS) -->
+  my_many(special, XS),
+  !.
 
 predicate_name(R) -->
   inside("'", "'", X),
@@ -572,7 +589,7 @@ inside(L, R, Inside) -->
 inside(_, R, U, Inside) -->
   R,
   !,
-  {reverse(U, Inside)}.
+  { reverse(U, Inside) }.
 
 inside(L, R, U, Inside) -->
   [C],
@@ -687,10 +704,11 @@ read_file(Stream, []) :-
 
 read_file(Stream, [X|L]) :-
     \+ at_end_of_stream(Stream),
-    read_line_to_codes(Stream, X0),
+    read_line(Stream, X0),
     append(X0, "\n", X),
     read_file(Stream, L).
 
+read_file(_, []).
 
   
 % my_get_flag(+Name, -Value)

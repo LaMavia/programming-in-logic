@@ -13,6 +13,7 @@
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = with pkgs; [
             swiProlog
+            sshfs
           ];
         };
       }
