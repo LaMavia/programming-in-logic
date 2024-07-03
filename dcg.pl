@@ -711,6 +711,7 @@ read_file(Stream, [X|L]) :-
 read_file(_, []).
 
   
+
 % my_get_flag(+Name, -Value)
 my_get_flag(Id, Val) :-
   ( gs(Id, Val) -> true
