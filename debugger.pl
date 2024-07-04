@@ -42,33 +42,43 @@ z_leash(Mode) :-
 
 % do_goal(:Goal, +Ctx)
 do_goal(Goal, Ctx) :-
+  (
+      Goal = true
+  ->  Ctx = Ctx2
+  ;   z_ctx_inc_depth(Ctx, Ctx1),
+      z_ctx_inc_cid(Ctx1, Ctx2)
+  ),
   catch(
     if(
-      do_goal_impl(Goal, Ctx, Ctx1),
-      emit_event(exit, Goal, Ctx1, _),
+      do_goal_impl(Goal, Ctx2),
+      emit_event(exit, Goal, Ctx2, _),
       ( 
-        emit_event(fail, Goal, Ctx1, _),  
+        emit_event(fail, Goal, Ctx2, _),  
         fail
       )
     ), 
-    error(Reason, Rest), 
+    error(Reason, _), 
     (
-      format("~p, ~q\n", [Reason, Rest]),
-      emit_event(exception, Goal, Ctx1, _),
-      throw(error(Reason, Rest))
+      format("\x1b[1;31m~p\x1b[1;0m (~q)\n", [Reason, Ctx]),
+      emit_event(exception, Goal, Ctx2, _),
+      fail
     )
   ).
 
 
-% do_goal_impl(:Goal, Ctx)
-do_goal_impl(Goal, Ctx, Ctx) :- system(Goal), !, call(Goal).
 
-do_goal_impl(Goal, Ctx, Ctx2) :- 
-  z_ctx_inc_depth(Ctx, Ctx1),
-  z_ctx_inc_cid(Ctx1, Ctx2),
+% do_goal_impl(:Goal, Ctx)
+do_goal_impl(Goal, Ctx) :- 
+  system(Goal), 
+  !, 
+  emit_event(call, Goal, Ctx, _),
+  call(Goal).
+
+do_goal_impl(Goal, Ctx) :- 
+  \+ system(Goal),
   clause(Goal, Body),
-  format(">>> ~q (~q)\n", [(Goal :- Body), Ctx2]),
-  emit_event(call, Goal, Ctx2, CtxBody),
+  format(">>> ~q (~q)\n", [(Goal :- Body), Ctx]),
+  emit_event(call, Goal, Ctx, CtxBody),
   do_body(Body, CtxBody, AfterCut, HadCut),
   (
     HadCut = yes,
@@ -175,10 +185,10 @@ z_ctx_reset_redo(Ctx, Ctx1) :-
 
 
 emit_event(Event, Term, Ctx, Ctx1) :-
-  \+ system(Term),
+  format("[~q] Term: ~q, Ctx: ~q\n", [Event, Term, Ctx]),
+  Term \= true,
   !,
   z_get_flag(ports, TrackedPorts),
-  % format("[~q] Term: ~q, Ctx: ~q\n", [Event, Term, Ctx]),
   (
      member(Event, TrackedPorts),
      z_do_trace(Ctx)
@@ -187,8 +197,7 @@ emit_event(Event, Term, Ctx, Ctx1) :-
   ;  Ctx1 = Ctx
   ).
 
-emit_event(_, Term, Ctx, Ctx) :-
-  system(Term).
+emit_event(_, true, Ctx, Ctx).
 
 
 % write_debugger_line(+Event, +Term, +Ctx)
@@ -324,5 +333,5 @@ my_member(X, [X|_]).
 my_member(X, [_|XS]) :- my_member(X, XS).
 
 q(_).
-q(A) :- A > 1, !, format("Hello!\n", []).
+q(A) :- A > 1, !, fail.
 q(_) :- format("Bye:/\n", []).
